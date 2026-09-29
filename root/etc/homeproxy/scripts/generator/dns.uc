@@ -74,6 +74,24 @@ function parse_dnsquery(strquery) {
 
 /* --- proxy routing-mode path (bypass_mainland_china / proxy / / gfwlist) -- */
 
+/* Domains whose NAPTR (qtype 35) queries bypass china-dns.  Aliyun
+ * (china-dns's default backend, 223.5.5.5) returns NAPTR with multi-
+ * second first responses for these suffixes, which sing-box reports as
+ * 'context deadline exceeded' (sipgz12.hbq.r.10086.cn being the
+ * reproducible offender); routing the qtype to default-dns (the ISP
+ * resolver or the wan_dns fallback) keeps IMS/VoLTE registration fast.
+ *
+ * The list is deliberately small: every entry is a suffix match, so
+ * adding a single host name can broaden the rule by accident.  Add new
+ * suffixes here when a fresh NAPTR offender is observed, not when
+ * someone reads the comment and thinks "I know a domain that should
+ * go direct". */
+const NAPTR_BYPASS_SUFFIXES = [
+	'r.10086.cn',
+	'10086.cn',
+	'pub.3gppnetwork.org'
+];
+
 function append_proxy_dns(config, dm, ctx) {
 	if (isEmpty(ctx.main_node))
 		return;
@@ -108,19 +126,23 @@ function append_proxy_dns(config, dm, ctx) {
 			tag: 'china-dns',
 			domain_resolver: {
 				server: 'default-dns',
-				strategy: 'prefer_ipv6'
+				/* Mirror default-dns's strategy: china-dns itself is
+				 * overwhelmingly IPv4-only in practice (223.5.5.5 etc.),
+				 * so the field mostly affects the upstream chain; the
+				 * two should still track each other for the same reason
+				 * default-dns follows ipv6_support. */
+				strategy: (ctx.ipv6_support !== '1') ? 'ipv4_only' : 'prefer_ipv6'
 			},
 			detour: ctx.self_mark ? 'direct-out' : null,
 			...parse_dnsserver(ctx.china_dns_server)
 		});
 
 		/* Route NAPTR (qtype 35) queries for SIP/ENUM domains to the ISP
-		   default-dns directly: china-dns (223.5.5.5) has intermittent
-		   multi-second first responses for NAPTR, causing 'context deadline
-		   exceeded' (e.g. sipgz12.hbq.r.10086.cn) */
+		   default-dns directly: see NAPTR_BYPASS_SUFFIXES for the
+		   rationale and the explicit offenders. */
 		push(config.dns.rules, {
 			query_type: [35],
-			domain_suffix: ['r.10086.cn', '10086.cn', 'pub.3gppnetwork.org'],
+			domain_suffix: NAPTR_BYPASS_SUFFIXES,
 			action: 'route',
 			server: 'default-dns'
 		});
