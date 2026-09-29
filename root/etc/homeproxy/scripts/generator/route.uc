@@ -62,7 +62,11 @@ function initRoute(config, ctx) {
 			sniff_rule
 		],
 		rule_set: [],
-		auto_detect_interface: isEmpty(ctx.default_interface) ? true : null,
+		/* auto_detect_interface: explicit true when the user did not
+		 * pin a default_interface, explicit false when they did - not
+		 * null (the previous "null means no field" shape silently kept
+		 * the auto-detect on when the user expected it off). */
+		auto_detect_interface: isEmpty(ctx.default_interface) ? true : false,
 		default_interface: ctx.default_interface
 	};
 }
