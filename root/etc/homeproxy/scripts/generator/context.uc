@@ -153,7 +153,16 @@ export function build_context(dm, env) {
 		 * main-dns/china-dns, the route block with leftover custom rules -
 		 * and the rule-set tags those rules reference are only built in
 		 * custom mode, so `sing-box check` rejected the whole generation.
-		 * Preset modes read custom-only fields nowhere; gate them all. */
+		 * Preset modes read custom-only fields nowhere; gate them all.
+		 *
+		 * The proxy/custom asymmetry the generator then exposes to users:
+		 * proxy mode's route.default_domain_resolver is the literal
+		 * 'default-dns' (route.uc line 78-81), while custom mode's is the
+		 * get_resolver(default_outbound_dns, dm) lookup (route.uc line
+		 * 217-220). The two are deliberately different: proxy mode does
+		 * not surface a user-facing "default outbound DNS" choice (the
+		 * preset path always resolves through the WAN DNS), while custom
+		 * mode lets the user pick. README does not promise otherwise. */
 		default_outbound: (routing_mode === 'custom') ? (dm.routing.settings || {}).default_outbound : null,
 		default_outbound_dns: (routing_mode === 'custom')
 			? ((dm.routing.settings || {}).default_outbound_dns || 'default-dns') : null,
