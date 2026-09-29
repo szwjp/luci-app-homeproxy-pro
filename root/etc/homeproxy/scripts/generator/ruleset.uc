@@ -47,29 +47,36 @@ export function build_user_rulesets(rule_set_array, dm, ctx) {
 			for (let t in extra_tags)
 				push(rs_tag, 'cfg-' + t + '-rule');
 			/* sing-box 1.14: multi-tag requires a {tag} placeholder in the fetch source
-			   (remote: url and initial_path, local: path) */
+			   (remote: url and initial_path, local: path).  A missing
+			   placeholder makes sing-box try to literal-substitute the
+			   first tag name and reject the whole config; the reload then
+			   keeps the previous one and the user only sees "my change did
+			   not take".  die() early so the saved UCI is rejected at
+			   apply time, the same way get_resolver/get_ruleset already
+			   fail loud on a missing/disabled reference. */
 			const fetch_ref = (cfg.type === 'remote') ? (cfg.url || '') : (cfg.path || '');
 			if (!match(fetch_ref, /\{tag\}/))
-				warn(sprintf("homeproxy: rule-set '%s' uses extra tags but its %s source lacks a {tag} placeholder.", cfg.name, cfg.type));
+				die(sprintf("homeproxy: rule-set '%s' uses extra tags but its %s source lacks a {tag} placeholder; add {tag} to the source or drop the extra tags.", cfg.name, cfg.type));
 			if (cfg.type === 'remote' && !isEmpty(cfg.initial_path) && !match(cfg.initial_path, /\{tag\}/))
-				warn(sprintf("homeproxy: rule-set '%s' uses extra tags but its initial_path lacks a {tag} placeholder.", cfg.name));
+				die(sprintf("homeproxy: rule-set '%s' uses extra tags but its initial_path lacks a {tag} placeholder.", cfg.name));
 		}
+
+		/* Local rule-set path is read by sing-box as root. The whitelist
+		 * is enforced here because the LuCI form's datatype='file' is
+		 * only UX - UCI can be set from anywhere on the LAN, and an
+		 * arbitrary /etc/passwd would leak the file to anyone who
+		 * could write UCI.  die() early (same as get_resolver on a
+		 * missing/disabled dns_server): silently dropping path left
+		 * sing-box checking whatever the field evaluated to, and the
+		 * user only saw the reload keep the previous config. */
+		if (cfg.type === 'local' && cfg.path && !validateHomeProxyPath(cfg.path))
+			die(sprintf("homeproxy: rule-set '%s' path '%s' is outside the homeproxy whitelist; choose a path under /etc/homeproxy/.", cfg.name, cfg.path));
 
 		const ruleset = {
 			type: cfg.type,
 			tag: rs_tag,
 			format: cfg.format,
-			/* Local rule-set path is read by sing-box as root. The
-			 * whitelist is enforced here because the LuCI form's
-			 * datatype='file' is only UX - UCI can be set from anywhere
-			 * on the LAN, and an arbitrary /etc/passwd would leak the
-			 * file to anyone who could write UCI. Drop the field rather
-			 * than die(): a missing path on a local ruleset becomes
-			 * sing-box invalid (and known-good stays), same effect as a
-			 * hard fail. */
-			path: (cfg.type === 'local' && cfg.path && !validateHomeProxyPath(cfg.path))
-				? null
-				: cfg.path,
+			path: cfg.path,
 			url: cfg.url,
 			update_interval: cfg.update_interval
 		};
