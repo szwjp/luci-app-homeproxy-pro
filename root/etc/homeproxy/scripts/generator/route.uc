@@ -166,12 +166,24 @@ function build_route_proxy(config, dm, ctx, direct_overrides) {
 		 * makes it fail intermittently; the files total ~250 KB per
 		 * day, so proxying the download costs almost nothing.
 		 *
-		 * Only geosite-cn and geoip-cn are emitted: they are the two the
-		 * DNS and route blocks actually reference.  A third geosite-noncn
-		 * used to be declared here as well, but no rule ever referenced it -
-		 * sing-box creates (and keeps updating, and holds in memory) every
-		 * declared rule-set regardless of use, so it was a daily ~100 KB
-		 * download through the proxy for nothing.
+		 * Both geosite-cn and geoip-cn are still emitted, but they are
+		 * consumed by different blocks:
+		 *
+		 *   geoip-cn  - referenced by the route rule above (line 105) to
+		 *               split CN destinations to direct-out.
+		 *   geosite-cn - referenced only by the DNS rule in
+		 *               generator/dns.uc line 135-139 (rule_set: geosite-cn
+		 *               -> server: china-dns); the route layer never
+		 *               matches it. Sing-box still loads and keeps the
+		 *               rule-set in memory even when only one block
+		 *               references it, so removing it would also break the
+		 *               DNS split.
+		 *
+		 * History: a third geosite-noncn used to be declared here as well,
+		 * but no rule referenced it and sing-box still loaded and updated
+		 * it daily, so it was removed (the comment above was rewritten
+		 * during the 2026-09-29 review to clarify that geosite-cn is still
+		 * in use - the DNS side - just not from this block).
 		 */
 		push(config.route.rule_set, {
 			type: 'remote',

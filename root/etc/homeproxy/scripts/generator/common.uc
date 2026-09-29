@@ -176,9 +176,15 @@ export function attachSchema(config) {
 	return config;
 };
 
-/* Attach the experimental cache_file block when one of the routing modes
- * that needs it is active. Routing-mode gating stays here because the
- * block is the same regardless of mode; only the condition differs.
+/* Attach the experimental cache_file block. Every routing mode benefits
+ * from it: bypass_mainland_china and custom match a lot of DNS, and the
+ * other modes still resolve the proxy node hostname and resolve any
+ * domain the user clicks through. cache_file is a no-op on a fresh
+ * install (no cache to read) and the file is the only piece of state the
+ * generator writes outside /etc/config/homeproxy.  Routing-mode gating
+ * used to limit it to bypass_mainland_china + custom, which left
+ * gfwlist / proxy_mainland_china / global with cold-start DNS on every
+ * reload and made the difference between modes hard to explain.
  *
  * Note: docs/linux.json 与 pro 的差距分析.md §2.5 once asked for an
  * explicit `reverse_mapping: true` here (so a future sing-box change to
@@ -190,14 +196,12 @@ export function attachSchema(config) {
  * generated config compatible with the test target. Revisit if the
  * floor moves past the release where the field was introduced. */
 export function attachExperimental(config, routing_mode, dns_store_dns) {
-	if (routing_mode in ['bypass_mainland_china', 'custom']) {
-		config.experimental = {
-			cache_file: {
-				enabled: true,
-				path: '/etc/homeproxy/cache.db',
-				store_dns: (dns_store_dns === '1') ? true : null
-			}
-		};
-	}
+	config.experimental = {
+		cache_file: {
+			enabled: true,
+			path: '/etc/homeproxy/cache.db',
+			store_dns: (dns_store_dns === '1') ? true : null
+		}
+	};
 	return config;
 };
