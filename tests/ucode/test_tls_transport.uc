@@ -146,7 +146,7 @@ expect('general gate still accepts /tmp/homeproxy_',
 /* The diagnostic has to name the roots, or the user is left guessing where the
  * file is supposed to go. */
 expect('the roots text lists the archive',
-	indexOf(rulePathRootsText(), '/etc/homeproxy/ruleset/') >= 0, true);
+	!!match(rulePathRootsText(), /\/etc\/homeproxy\/ruleset\//), true);
 
 const sslCert = buildTLSObject({ enabled: '1', server_name: 's', cert_path: '/etc/ssl/certs/srv.pem' }, false);
 expect('client.cert_path /etc/ssl kept', sslCert.certificate_path, '/etc/ssl/certs/srv.pem');
