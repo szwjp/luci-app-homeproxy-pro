@@ -3168,20 +3168,26 @@
 								"kind": "Value",
 								"name": "path",
 								"title": "Path",
-								"description": null,
+								"description": "Rule-set file in /etc/homeproxy/ruleset/. Copy it there first: the generator refuses a rule-set whose file is missing.",
 								"depends": [
 									[
 										"type",
 										"local"
 									]
 								],
-								"values": [],
+								"values": [
+									[
+										"/etc/homeproxy/ruleset/example.srs",
+										null
+									]
+								],
 								"subsection": null,
 								"props": {
 									"datatype": "file",
 									"modalonly": true,
-									"placeholder": "/etc/homeproxy/ruleset/example.json",
-									"rmempty": false
+									"placeholder": "/etc/homeproxy/ruleset/example.srs",
+									"rmempty": false,
+									"validate": "fn(279:52e3f36f3a3c)"
 								}
 							},
 							{
@@ -3224,18 +3230,25 @@
 								"kind": "Value",
 								"name": "initial_path",
 								"title": "Initial path",
-								"description": "Local file with initial rule-set content; avoids blocking startup on first download (1.14).",
+								"description": "Local file with initial rule-set content; avoids blocking startup on first download (1.14). Must be under /etc/homeproxy/ruleset/.",
 								"depends": [
 									[
 										"type",
 										"remote"
 									]
 								],
-								"values": [],
+								"values": [
+									[
+										"/etc/homeproxy/ruleset/example.srs",
+										null
+									]
+								],
 								"subsection": null,
 								"props": {
 									"datatype": "file",
-									"modalonly": true
+									"modalonly": true,
+									"placeholder": "/etc/homeproxy/ruleset/example.srs",
+									"validate": "fn(279:52e3f36f3a3c)"
 								}
 							},
 							{

@@ -58,9 +58,19 @@ function render(ctx) {
 	so.default = 'binary';
 	so.rmempty = false;
 
-	so = ss.option(form.Value, 'path', _('Path'));
+	so = ss.option(form.Value, 'path', _('Path'),
+		_('Rule-set file in %s. Copy it there first: the generator refuses a rule-set whose file is missing.').format('/etc/homeproxy/ruleset/'));
 	so.datatype = 'file';
-	so.placeholder = '/etc/homeproxy/ruleset/example.json';
+	/* The archive is the only directory the backend admits (RULE_PATH_ROOTS),
+	 * and it is created for the user - at install time and again before every
+	 * generation. Offering it as the datalist entry is what turns "point at a
+	 * file under a directory that may not exist" into a one-click default.
+	 * The same field used to carry a placeholder naming example.json while
+	 * the UI defaulted the format to binary, so the file it suggested was one
+	 * the generated configuration would then refuse to parse. */
+	so.value(hp.rule_path_default);
+	so.placeholder = hp.rule_path_default;
+	so.validate = hp.validateRuleSetPath;
 	so.rmempty = false;
 	so.depends('type', 'local');
 	so.modalonly = true;
@@ -108,8 +118,11 @@ function render(ctx) {
 	so.depends('type', 'remote');
 
 	so = ss.option(form.Value, 'initial_path', _('Initial path'),
-		_('Local file with initial rule-set content; avoids blocking startup on first download (1.14).'));
+		_('Local file with initial rule-set content; avoids blocking startup on first download (1.14). Must be under %s.').format('/etc/homeproxy/ruleset/'));
 	so.datatype = 'file';
+	so.value(hp.rule_path_default);
+	so.placeholder = hp.rule_path_default;
+	so.validate = hp.validateRuleSetPath;
 	so.depends('type', 'remote');
 	so.modalonly = true;
 

@@ -133,6 +133,45 @@ check('cert path ignores an empty value',
 check('cert path ignores a missing section',
 	hp.validateCertificatePath(null, '/etc/passwd') === true);
 
+/* validateRuleSetPath: the rule-set policy has to be the same list the backend
+ * enforces (RULE_PATH_ROOTS in homeproxy.uc; guard 50 compares them
+ * textually). It is deliberately NARROWER than the certificate list and than
+ * the backend's general HP_DIR gate - a rule-set belongs in the archive and
+ * nowhere else - so the interesting assertions are the ones where a path is
+ * inside /etc/homeproxy but outside the archive, and where it is under the
+ * /tmp/homeproxy_ prefix the certificate list also refuses. A UI built on the
+ * general gate would offer both, and the generator would then refuse them. */
+check('rule-set path accepts the archive',
+	hp.validateRuleSetPath('sec1', '/etc/homeproxy/ruleset/example.srs') === true);
+check('rule-set path rejects a bare root',
+	isError(hp.validateRuleSetPath('sec1', '/etc/homeproxy/ruleset/')));
+check('rule-set path rejects /etc/passwd',
+	isError(hp.validateRuleSetPath('sec1', '/etc/passwd')));
+check('rule-set path rejects another path under /etc/homeproxy',
+	isError(hp.validateRuleSetPath('sec1', '/etc/homeproxy/resources/china_ip4.json')));
+check('rule-set path rejects the certs directory',
+	isError(hp.validateRuleSetPath('sec1', '/etc/homeproxy/certs/server_privatekey.pem')));
+check('rule-set path rejects /tmp/homeproxy_ upload staging',
+	isError(hp.validateRuleSetPath('sec1', '/tmp/homeproxy_ruleset_upload.tmp')));
+check('rule-set path rejects a traversal out of the archive',
+	isError(hp.validateRuleSetPath('sec1', '/etc/homeproxy/ruleset/../../etc/shadow')));
+check('rule-set path rejects a relative path',
+	isError(hp.validateRuleSetPath('sec1', 'etc/homeproxy/ruleset/x.srs')));
+check('rule-set path ignores an empty value',
+	hp.validateRuleSetPath('sec1', '') === true);
+check('rule-set path ignores a missing section',
+	hp.validateRuleSetPath(null, '/etc/passwd') === true);
+
+/* The placeholder and the datalist entry the form offers have to be paths this
+ * validator accepts. A placeholder naming a directory the field then refuses is
+ * the same class of bug the mirrored lists exist to prevent, and the
+ * placeholder is what a user copies. */
+const defaultPath = hp.rule_path_default;
+check('the rule-set form offers a default path',
+	typeof defaultPath === 'string' && defaultPath.length > 0, String(defaultPath));
+check('the offered default path passes its own validator',
+	hp.validateRuleSetPath('sec1', defaultPath) === true, String(defaultPath));
+
 /* --- dns_server: the legacy 'wan' value has to stay acceptable ---------- *
  * The preset-mode "Overseas DNS server" field used to offer a 'wan' entry
  * ("WAN DNS (read from interface)").  The entry is gone from the dropdown -

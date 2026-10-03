@@ -23,15 +23,6 @@ WORK="${2:-/tmp/hp-generator-test}"
 ROOT="$(cd "$ROOT" && pwd)"
 FAILED=0
 
-# The local rule-set fixture has to live under /tmp/homeproxy_ (see below), so
-# it cannot sit inside $WORK; this is the per-run root that holds it instead.
-# Created lazily by the first case that needs one.
-RULESET_ROOT=""
-cleanup() {
-	[ -n "$RULESET_ROOT" ] && rm -rf "$RULESET_ROOT"
-}
-trap cleanup EXIT INT TERM
-
 run_case() {
 	name="$1"
 	fixture="$2"
@@ -83,35 +74,23 @@ run_case() {
 	fi
 
 	if grep -q "__RULESET_DIR__" "$fixture"; then
-		# The fixture needs a real local rule-set on disk. The path must
-		# live under /tmp/homeproxy_* (validateHomeProxyPath() in
-		# homeproxy.uc whitelists /etc/homeproxy/ and /tmp/homeproxy_
-		# only, and the custom fixture exercises the local-rule-set
-		# path whitelist gate introduced by the security patch).
+		# The fixture needs a real local rule-set on disk.  The path has to
+		# satisfy validateRuleSetPath(), whose RULE_PATH_ROOTS was rewritten
+		# to this run's scratch tree when homeproxy.uc was staged below - so
+		# the archive IS $dir/ruleset and no out-of-tree copy is needed.
+		#
+		# It used to be copied out to a /tmp/homeproxy_* directory instead,
+		# because the whitelist then admitted /tmp/homeproxy_*.  Narrowing the
+		# policy to the single archive root removed the reason for the copy
+		# and, with it, the per-run mktemp that made this the only case in
+		# the suite reaching outside its own work dir.
 		printf '%s' '{"version":1,"rules":[{"domain_suffix":["example.com"]}]}' > "$dir/ruleset/src.json"
 		if ! sing-box rule-set compile "$dir/ruleset/src.json" -o "$dir/ruleset/test.srs"; then
 			echo "FAIL: $name: could not compile the local rule-set fixture"
 			FAILED=1
 			return
 		fi
-		# Stage the ruleset under a /tmp/homeproxy_* directory so the
-		# whitelist recognises the staging path. Production paths
-		# typically live at /etc/homeproxy/ruleset/...
-		#
-		# The path cannot move under $WORK (validateHomeProxyPath() in
-		# homeproxy.uc whitelists /etc/homeproxy/ and /tmp/homeproxy_
-		# only), but it can still be per-run: mktemp gives each run its
-		# own tree, and the trap removes it even when a case bails out
-		# early.  The old fixed /tmp/homeproxy_test_ruleset/$name leaked
-		# one directory per run and let two concurrent runs overwrite
-		# each other's compiled .srs.
-		if [ -z "$RULESET_ROOT" ]; then
-			RULESET_ROOT="$(mktemp -d /tmp/homeproxy_test_ruleset.XXXXXX)"
-		fi
-		HP_RULESET="$RULESET_ROOT/$name"
-		mkdir -p "$HP_RULESET"
-		cp "$dir/ruleset/test.srs" "$HP_RULESET/test.srs"
-		sed "s#__RULESET_DIR__#$HP_RULESET#" "$fixture" > "$dir/config/homeproxy"
+		sed "s#__RULESET_DIR__#$dir/ruleset#" "$fixture" > "$dir/config/homeproxy"
 	else
 		cp "$fixture" "$dir/config/homeproxy"
 	fi
@@ -139,12 +118,32 @@ run_case() {
 	# the staging seam out of the source files - staging it as
 	# HP_DIR + '/config' instead would silently diverge from production,
 	# which is exactly the bug this constant replaced.
+	#
+	# RULE_PATH_ROOTS is rewritten for the same reason and with the same
+	# intent: it is the archive the local rule-set fixture has to live in,
+	# and the suite must not have to write to the real /etc/homeproxy/ruleset
+	# to exercise the whitelist.  The value is this run's own $dir/ruleset -
+	# the same tree __RULESET_DIR__ was substituted with above.
 	VALIDATE_DATA="${HP_VALIDATE_DATA:-/sbin/validate_data}"
 	sed -e "s#^export const HP_DIR = '/etc/homeproxy';#export const HP_DIR = '$dir';#" \
 	    -e "s#^export const RUN_DIR = '/var/run/homeproxy';#export const RUN_DIR = '$dir/run';#" \
 	    -e "s#^export const UCICONFIG_DIR = '/etc/config';#export const UCICONFIG_DIR = '$dir/config';#" \
+	    -e "s#^export const RULE_PATH_ROOTS = \\['/etc/homeproxy/ruleset/'\\];#export const RULE_PATH_ROOTS = ['$dir/ruleset/'];#" \
 	    -e "s#/sbin/validate_data#${VALIDATE_DATA}#" \
 	    "$ROOT/root/etc/homeproxy/scripts/homeproxy.uc" > "$dir/scripts/homeproxy.uc"
+
+	# The rewrite above is a staging seam, so it has to be verified rather
+	# than assumed: a sed that stopped matching would leave the production
+	# roots in place, every local rule-set case would be refused by the
+	# whitelist, and the suite would report a generator regression instead.
+	# -F, because the bracket expressions would otherwise have to be escaped
+	# and this script also runs under busybox grep on a target.
+	if grep -qF "export const RULE_PATH_ROOTS = ['/etc/homeproxy/ruleset/']" \
+		"$dir/scripts/homeproxy.uc"; then
+		echo "FAIL: $name: RULE_PATH_ROOTS was not rewritten into the sandbox"
+		FAILED=1
+		return
+	fi
 
 	# Stage the config/ subtree (Loader / Model / Adapter, imported via
 	# the relative path "../config/*.uc" by the generator modules).
@@ -1171,16 +1170,55 @@ else
 	echo "PASS: cache-file-custom: experimental.cache_file emitted for routing_mode='custom'"
 fi
 
-# 5) P3 #7: a local ruleset whose path is outside the homeproxy
-#    whitelist (e.g. /etc/passwd) used to silently set the field to
-#    null. The fix is to die() with a message naming the offender.
-#    run_case_type_error observes the refusal. The variation targets
-#    the *staged* config (after run_case substituted the placeholder
-#    with the per-run /tmp path), so the pattern is on the real path
-#    prefix rather than the fixture literal.
-run_case_type_error local-ruleset-bad-path "outside the homeproxy whitelist" \
+# 5) P3 #7: a local ruleset whose path is outside the allowed rule-set roots
+#    used to be silently dropped (and later, for initial_path, silently set to
+#    null).  The fix is to die() with a message naming the offender.
+#    run_case_type_error observes the refusal.  The variation targets the
+#    *staged* config, whose path was rewritten by run_case to this run's
+#    scratch archive, so the pattern is on the staged path rather than the
+#    fixture's __RULESET_DIR__ literal.
+#
+# The roots were narrowed to the single archive (RULE_PATH_ROOTS), so this now
+# also pins that a path inside /etc/homeproxy but OUTSIDE the archive is
+# refused - which the old /etc/homeproxy/-wide gate would have accepted.
+run_case_type_error local-ruleset-bad-path "outside the allowed rule-set roots" \
 	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
-	"s%^[[:space:]]*option path '/tmp/homeproxy_test_ruleset\\.[^/]*/local-ruleset-bad-path/test.srs'%    option path '/etc/passwd'%"
+	"s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option path '/etc/homeproxy/resources/test.srs'%"
+
+# 5b) The traversal form of the same hole. A prefix comparison alone accepts
+#     /etc/homeproxy/ruleset/../../etc/shadow, and sing-box opens the rule-set
+#     as root, so the gate has to reject the segment itself rather than the
+#     resolved path.
+run_case_type_error local-ruleset-traversal "outside the allowed rule-set roots" \
+	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option path '/etc/homeproxy/ruleset/../../etc/shadow'%"
+
+# 5c) A path INSIDE the archive that nobody has put a file at.  This is the
+#     case the whole directory-timing fix is about: `sing-box check` opens
+#     every local rule_set path, so before the pre-check this produced
+#
+#       parse rule-set[0]: open <path>: no such file or directory
+#
+#     which names neither the rule-set the user created nor the directory they
+#     are meant to copy files into, and surfaced to them only as "new client
+#     configuration is invalid, reload aborted".  The message below names both.
+run_case_type_error local-ruleset-missing-file "which is missing, not a regular file, or empty" \
+	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%^[[:space:]]*option path '\(.*\)/ruleset/test.srs'%    option path '\1/ruleset/never-copied-here.srs'%"
+
+# 5d) An out-of-policy initial_path is now a refusal too, instead of a silent
+#     null.  The old behaviour dropped the field, so the rule-set went back to
+#     blocking startup on its first download and the configuration looked
+#     configured while behaving as if the field were empty.
+#
+#     One sed script, two expressions: turn the local rule-set into a remote one
+#     and give it an initial_path outside the archive.  The `path` line is
+#     replaced rather than left behind because a remote rule_set carries no
+#     `path`, and this case must fail on the whitelist rather than reach
+#     `sing-box check` with a field the remote type does not have.
+run_case_type_error remote-ruleset-bad-initial-path "initial_path .* is outside the allowed rule-set roots" \
+	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%option type 'local'%option type 'remote';s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option url 'https://example.invalid/x.srs'\n    option initial_path '/etc/passwd'%"
 
 # 6) P3 #8 (extra_tags die() on missing {tag}): deferred to
 #    a dedicated 'testbed-dialect' sprint. The multi-line sed to

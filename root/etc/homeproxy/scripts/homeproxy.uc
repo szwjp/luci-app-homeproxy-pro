@@ -118,6 +118,76 @@ export function validateCertificatePath(p) {
 	return false;
 };
 
+/* Rule-set source files: the `path` of a `type: local` rule_set and the
+ * `initial_path` of a `type: remote` one.  sing-box opens both as root, so
+ * the threat model is the certificate one - an arbitrary UCI value would leak
+ * the file to anyone who can write the UCI tree from anywhere on the LAN.
+ *
+ * Unlike a certificate, a rule-set has exactly one home: the archive this
+ * package creates at install time (uci-defaults/luci-homeproxy) and before
+ * every generation (runtime/service.sh's hp_prepare_ruleset_dir).  So the
+ * policy is a single root rather than the three a certificate needs, and it
+ * is deliberately NARROWER than validateHomeProxyPath() - that gate also
+ * accepts /tmp/homeproxy_*, which exists for upload staging, and every path
+ * under /etc/homeproxy/ including the resource lists the package itself
+ * rewrites.  A rule-set belongs in the archive (issue #7, review 4.4/4.7).
+ *
+ * Kept as a third policy rather than folded into validateHomeProxyPath() for
+ * the reason validateCertificatePath() is: the policies have to be
+ * independently narrowable, and folding them back together is exactly how the
+ * certificate one regressed once already - a path the UI offered was accepted
+ * there and silently dropped here, so the TLS listener failed with nothing
+ * pointing at the path.
+ *
+ * The list is mirrored by HP_RULE_PATH_ROOTS in
+ * htdocs/luci-static/resources/homeproxy.js; guard 50 in tests/arch-guard.sh
+ * keeps the two in step across the JS/ucode boundary, which nothing else can
+ * see. */
+export const RULE_PATH_ROOTS = ['/etc/homeproxy/ruleset/'];
+
+/* validateRuleSetPath(p) - the rule-set path gate.
+ *
+ * Same shape as validateCertificatePath(): reject traversal and relative
+ * paths, then require one of RULE_PATH_ROOTS.  A bare root ("/etc/homeproxy/
+ * ruleset/" with nothing after it) is rejected - it names the directory, not
+ * a file. */
+export function validateRuleSetPath(p) {
+	if (!p || type(p) !== 'string')
+		return false;
+
+	/* Reject traversal *before* the prefix checks: a plain prefix comparison
+	 * accepts '/etc/homeproxy/ruleset/../../etc/shadow', and sing-box reads
+	 * these paths as root. */
+	if (match(p, /(^|\/)\.\.(\/|$)/))
+		return false;
+
+	/* Reject anything that does not start with '/' - a relative path in
+	 * sing-box resolves against the process CWD. */
+	if (substr(p, 0, 1) !== '/')
+		return false;
+
+	for (let root in RULE_PATH_ROOTS)
+		if (length(p) > length(root) && substr(p, 0, length(root)) === root)
+			return true;
+
+	return false;
+};
+
+/* RULE_PATH_ROOTS rendered for a diagnostic.  join(', ', RULE_PATH_ROOTS) is
+ * not used: join() is variadic, and passing the array as one value would
+ * stringify the list rather than join it - a message that reads
+ * "/etc/homeproxy/ruleset/" is right, and one that reads
+ * "/etc/homeproxy/ruleset/,/etc/homeproxy/ruleset/" is not, so this builds
+ * the string the boring way and cannot drift. */
+export function rulePathRootsText() {
+	let text = '';
+
+	for (let root in RULE_PATH_ROOTS)
+		text = text ? (text + ', ' + root) : root;
+
+	return text;
+};
+
 /* Read at most `limit` bytes from a file, or '' when it does not exist.
  * The cap is deliberate: a command's output is not trustworthy input. */
 function read_capped(path, limit) {

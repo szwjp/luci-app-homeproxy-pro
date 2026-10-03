@@ -26,9 +26,9 @@
 
 'use strict';
 
-import { isEmpty, validateHomeProxyPath } from '../homeproxy.uc';
+import { isEmpty, rulePathRootsText, validateRuleSetPath } from '../homeproxy.uc';
 
-import { get_outbound, isDirectOutboundTag } from './common.uc';
+import { get_outbound, isDirectOutboundTag, rule_set_tags } from './common.uc';
 
 /* --- user-defined rule_set entries (custom mode only) ----------------- */
 
@@ -41,11 +41,15 @@ export function build_user_rulesets(rule_set_array, dm, ctx) {
 			continue;
 
 		const extra_tags = cfg.extra_tags || [];
-		let rs_tag = 'cfg-' + cfg.name + '-rule';
+		/* One source of truth for the tag list, shared with the CLI that has
+		 * to expand a {tag} placeholder before it can check that the files
+		 * exist (common.uc's rule_set_tags).  A second copy would be free to
+		 * drift, and the failure would be quiet: the pre-check would stat
+		 * files the running configuration never names. */
+		const all_tags = rule_set_tags(cfg);
+		let rs_tag = all_tags[0];
 		if (length(extra_tags) && cfg.type !== 'inline') {
-			rs_tag = [rs_tag];
-			for (let t in extra_tags)
-				push(rs_tag, 'cfg-' + t + '-rule');
+			rs_tag = all_tags;
 			/* sing-box 1.14: multi-tag requires a {tag} placeholder in the fetch source
 			   (remote: url and initial_path, local: path).  A missing
 			   placeholder makes sing-box try to literal-substitute the
@@ -61,16 +65,44 @@ export function build_user_rulesets(rule_set_array, dm, ctx) {
 				die(sprintf("homeproxy: rule-set '%s' uses extra tags but its initial_path lacks a {tag} placeholder.", cfg.name));
 		}
 
-		/* Local rule-set path is read by sing-box as root. The whitelist
-		 * is enforced here because the LuCI form's datatype='file' is
-		 * only UX - UCI can be set from anywhere on the LAN, and an
-		 * arbitrary /etc/passwd would leak the file to anyone who
-		 * could write UCI.  die() early (same as get_resolver on a
-		 * missing/disabled dns_server): silently dropping path left
-		 * sing-box checking whatever the field evaluated to, and the
-		 * user only saw the reload keep the previous config. */
-		if (cfg.type === 'local' && cfg.path && !validateHomeProxyPath(cfg.path))
-			die(sprintf("homeproxy: rule-set '%s' path '%s' is outside the homeproxy whitelist; choose a path under /etc/homeproxy/.", cfg.name, cfg.path));
+		/* A local rule-set is opened by sing-box as root, so its path is a
+		 * file-disclosure surface: the LuCI form's datatype='file' is only
+		 * UX, and UCI can be set from anywhere on the LAN.  The policy is
+		 * RULE_PATH_ROOTS (homeproxy.uc) - the archive this package creates
+		 * at install time - and it is deliberately NARROWER than the general
+		 * validateHomeProxyPath() gate, which also admits /tmp/homeproxy_*
+		 * upload staging and the package's own resource lists.
+		 *
+		 * die() early, for the reason get_resolver() gives: dropping the
+		 * field silently left sing-box checking whatever the field evaluated
+		 * to, and the user only saw the reload keep the previous config. */
+		if (cfg.type === 'local' && !isEmpty(cfg.path)) {
+			if (!validateRuleSetPath(cfg.path))
+				die(sprintf("homeproxy: rule-set '%s' path '%s' is outside the allowed rule-set roots (%s); move the file into one of them, or point the path at a file that is already there.", cfg.name, cfg.path, rulePathRootsText()));
+
+			/* The file has to be there too.  `sing-box check` runs over this
+			 * configuration before it is ever started, and it opens every
+			 * local rule_set path - so a rule-set pointing at a file nobody
+			 * has put there produced sing-box's own
+			 *
+			 *   parse rule-set[0]: open /etc/homeproxy/ruleset/x.srs: no such file
+			 *
+			 * which names neither the rule-set nor anything the user can act
+			 * on, and surfaced to the user as "new client configuration is
+			 * invalid, reload aborted".  The archive is created at install
+			 * time and before every generation precisely so that this is a
+			 * "you have not copied the file yet" message instead of a raw
+			 * filesystem error.
+			 *
+			 * The stat is root's view, taken by the one layer allowed to
+			 * touch the filesystem (guard 27) and handed over as
+			 * ctx.ruleset_local_ready.  Whether the *jailed* sing-box user
+			 * can read the file is the runtime's job:
+			 * hp_prepare_runtime_files hands the archive to that user on
+			 * every start. */
+			if (!ctx.ruleset_local_ready[cfg.name])
+				die(sprintf("homeproxy: rule-set '%s' points at '%s', which is missing, not a regular file, or empty. Put the file in %s and reload.", cfg.name, cfg.path, rulePathRootsText()));
+		}
 
 		const ruleset = {
 			type: cfg.type,
@@ -86,10 +118,18 @@ export function build_user_rulesets(rule_set_array, dm, ctx) {
 		   right below. */
 		if (cfg.type === 'remote')
 			ruleset.download_detour = get_outbound(cfg.outbound, dm) || get_outbound(ctx.default_outbound, dm);
-		if (cfg.type === 'remote' && !isEmpty(cfg.initial_path))
-			/* initial_path is read off the local disk as root; same
-			 * whitelist as the local ruleset path. */
-			ruleset.initial_path = validateHomeProxyPath(cfg.initial_path) ? cfg.initial_path : null;
+		/* initial_path is read off the local disk as root, so it answers to
+		 * the same rule-set policy as `path` - and it fails LOUD rather than
+		 * quietly becoming null.  The old form (`... ? value : null`) was the
+		 * last asymmetry left in this file: an out-of-policy initial_path was
+		 * dropped, the download went back to blocking startup, and the user
+		 * was left with a configuration that looked configured and behaved as
+		 * if the field were empty. */
+		if (cfg.type === 'remote' && !isEmpty(cfg.initial_path)) {
+			if (!validateRuleSetPath(cfg.initial_path))
+				die(sprintf("homeproxy: rule-set '%s' initial_path '%s' is outside the allowed rule-set roots (%s); move the file into one of them, or clear the field to let sing-box fetch the rule-set on its own.", cfg.name, cfg.initial_path, rulePathRootsText()));
+			ruleset.initial_path = cfg.initial_path;
+		}
 		push(rule_set_array, ruleset);
 	}
 };

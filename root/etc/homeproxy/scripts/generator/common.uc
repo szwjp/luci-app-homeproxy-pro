@@ -120,6 +120,28 @@ export function get_ruleset(cfg, dm) {
 	return rules;
 };
 
+/* rule_set_tags(cfg) - the rule_set tags ONE `dm.routing.rulesets` section
+ * produces: `cfg-<name>-rule`, plus one per entry in extra_tags.
+ *
+ * The generator needs it to build the tag; the CLI's environment resolution
+ * needs it too, because a `{tag}` placeholder in a source path has to be
+ * expanded to the real per-tag files before their existence can be checked.
+ * Two copies of this list would be free to drift, and the failure mode is
+ * quiet: the pre-check would stat files the running configuration never
+ * names, and a genuinely missing one would go unreported.
+ *
+ * Declared after get_ruleset() but before its callers for the same reason that
+ * function carries its own note: ucode resolves references at call time from
+ * what has already been evaluated. */
+export function rule_set_tags(cfg) {
+	const tags = [ 'cfg-' + cfg.name + '-rule' ];
+
+	for (let t in (cfg.extra_tags || []))
+		push(tags, 'cfg-' + t + '-rule');
+
+	return tags;
+};
+
 /* Resolve the direct-node destination override that the route builder
  * needs for a `direct` routing_node target. The override is recorded
  * earlier by generate_outbound() (see outbound.uc) when a direct node

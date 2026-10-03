@@ -34,6 +34,30 @@ const HTTP_PING_KEEPALIVE_HINT = _('The timeout (in seconds) that after performi
    TLS listener failed with nothing pointing at the path. */
 const HP_CERT_PATH_ROOTS = [ '/etc/homeproxy/certs/', '/etc/acme/', '/etc/ssl/' ];
 
+/* Rule-set source files: a `type: local` rule-set's `path` and a `type: remote`
+   one's `initial_path`. This list mirrors RULE_PATH_ROOTS in
+   /etc/homeproxy/scripts/homeproxy.uc, and tests/arch-guard.sh guard 50 fails
+   when the two drift apart - the same lock guard 29 puts on the certificate
+   list, for the same reason: the UI's check is only UX, UCI can be set from
+   anywhere on the LAN, and a path the UI accepted but the backend dropped made
+   the field vanish from the generated configuration with nothing pointing at
+   the path.
+
+   It is deliberately a single root, and deliberately narrower than the
+   general HP_DIR-shaped gate the backend also has: a rule-set belongs in the
+   archive, which the package creates at install time
+   (/etc/uci-defaults/luci-homeproxy) and before every generation
+   (runtime/service.sh's hp_prepare_ruleset_dir). */
+const HP_RULE_PATH_ROOTS = [ '/etc/homeproxy/ruleset/' ];
+
+/* The archive path offered as the datalist entry on the rule-set path fields,
+   so the default the backend expects is one click away instead of something
+   the user has to know. Kept as its own constant so the placeholder, the
+   datalist and the validator's message all quote the same directory - a
+   placeholder that named a path the validator then refused would be its own
+   small version of the bug this list exists to prevent. */
+const HP_RULE_PATH_DEFAULT = '/etc/homeproxy/ruleset/example.srs';
+
 /* Methods whose failure has already been reported, so that a polled call
    cannot repeat the same notification every few seconds. */
 const rpc_warned = new Set();
@@ -58,6 +82,14 @@ for (let i = 0; i < 64; i++)
 	MD5_K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296);
 
 return baseclass.extend({
+	/* The archive path the rule-set form offers as its datalist entry and
+	   placeholder. Exported rather than left module-local so the view quotes
+	   this one string instead of repeating the path: a placeholder naming a
+	   directory the validator then refuses is its own small version of the
+	   drift guard 50 exists to catch, and the placeholder is exactly what a
+	   user copies. */
+	rule_path_default: HP_RULE_PATH_DEFAULT,
+
 	dns_strategy: {
 		'': _('Default'),
 		'prefer_ipv4': _('Prefer IPv4'),
@@ -1104,6 +1136,23 @@ return baseclass.extend({
 			if (value.match(/(^|\/)\.\.(\/|$)/) ||
 			    !HP_CERT_PATH_ROOTS.some((root) => value.indexOf(root) === 0 && value.length > root.length))
 				return _('Expecting: %s').format(_('/etc/homeproxy/certs/..., /etc/acme/..., /etc/ssl/...'));
+
+		return true;
+	},
+
+	validateRuleSetPath(section_id, value) {
+		if (section_id && value)
+			/* HP_RULE_PATH_ROOTS is the same list the backend enforces
+			   (RULE_PATH_ROOTS, guard 50). The `..` rejection is explicit for
+			   the same reason as in validateCertificatePath: a prefix match
+			   alone accepts /etc/homeproxy/ruleset/../../etc/shadow, and
+			   sing-box opens these files as root. The backend is the authority
+			   - this only saves a save that the generator would refuse a
+			   moment later with a message the user reads in a log file rather
+			   than on the page they are editing. */
+			if (value.match(/(^|\/)\.\.(\/|$)/) ||
+			    !HP_RULE_PATH_ROOTS.some((root) => value.indexOf(root) === 0 && value.length > root.length))
+				return _('Expecting: %s').format(_('/etc/homeproxy/ruleset/...'));
 
 		return true;
 	},

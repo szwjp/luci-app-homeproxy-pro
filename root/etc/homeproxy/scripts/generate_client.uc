@@ -29,7 +29,8 @@ import { lstat, mkdtemp, readfile, writefile } from 'fs';
 
 import { Loader } from './config/loader.uc';
 import { generate } from './generator/client.uc';
-import { removeBlankAttrs, HP_DIR, RUN_DIR, shellQuote, UCICONFIG_DIR } from './homeproxy.uc';
+import { rule_set_tags } from './generator/common.uc';
+import { removeBlankAttrs, isEmpty, HP_DIR, RUN_DIR, shellQuote, UCICONFIG_DIR } from './homeproxy.uc';
 
 /* Resolve the GenerationContext inputs. This is the only impure step on the
  * client generation path, and it is deliberately here rather than under
@@ -81,8 +82,72 @@ function resolve_env(dm) {
 		 * lstat() is used because it is unambiguous - there is no second
 		 * argument to get wrong - and because the neighbouring stderr-size
 		 * check in homeproxy.uc already reads sizes through it. */
-		china_ip6_ready: lstat(HP_DIR + '/resources/china_ip6.json') !== null
+		china_ip6_ready: lstat(HP_DIR + '/resources/china_ip6.json') !== null,
+		/* Which enabled `type: local` rule-sets have a usable file on disk,
+		 * keyed by UCI section name.
+		 *
+		 * The same boundary as china_ip6_ready above, and for the same reason
+		 * it is resolved here rather than inside generator/: a rule-set whose
+		 * `path` names a file that is not there is a filesystem question, and
+		 * asking it from the generator would break the "generator/ is a pure
+		 * function of its arguments" invariant guard 27 enforces.
+		 *
+		 * Only enabled local rule-sets are looked at, mirroring the filter
+		 * build_user_rulesets() applies first - a disabled entry never reaches
+		 * the generated configuration, so a missing file behind one is not an
+		 * error.  The status is three-way on purpose:
+		 *
+		 *   missing key    the file is not there, or not a regular file, or
+		 *                  empty - all three make `sing-box check` fail, the
+		 *                  first two with a filesystem error and the third
+		 *                  with "invalid sing-box rule-set file"
+		 *   true           present and non-empty
+		 *   never true     deliberately absent for a disabled or non-local
+		 *                  entry, so "not checked" is distinguishable from
+		 *                  "checked and absent"
+		 *
+		 * A `{tag}` placeholder in a path is expanded to one file per tag
+		 * before the stat, because that is what sing-box does with it: a
+		 * multi-tag rule-set whose second tag has no file fails the same way
+		 * the first one would.  rule_set_tags() is imported from
+		 * generator/common.uc so this and the generator agree on the tag
+		 * names; the UI only offers extra_tags on remote rule-sets, so this
+		 * path is reachable through a direct UCI write rather than the form.
+		 *
+		 * This is root's view of the filesystem, which is what the generator
+		 * needs; whether the jailed sing-box user can read the file is the
+		 * runtime's business (hp_prepare_runtime_files hands the archive over
+		 * on every start). */
+		ruleset_local_ready: {}
 	};
+
+	if (routing_mode === 'custom') {
+		for (let cfg in (dm.routing.rulesets || [])) {
+			if (!cfg.enabled || cfg.type !== 'local' || isEmpty(cfg.path))
+				continue;
+
+			/* One path per tag; a single-tag rule-set yields exactly one, so
+			 * this is the plain case and the loop is the only complication. */
+			const paths = [];
+			if (match(cfg.path, /\{tag\}/))
+				for (let tag in rule_set_tags(cfg))
+					push(paths, replace(cfg.path, '{tag}', tag));
+			else
+				push(paths, cfg.path);
+
+			let usable = true;
+			for (let p in paths) {
+				const st = lstat(p);
+				if (!st || st.type !== 'file' || st.size <= 0) {
+					usable = false;
+					break;
+				}
+			}
+
+			if (usable)
+				env.ruleset_local_ready[cfg.name] = true;
+		}
+	}
 
 	if (routing_mode !== 'custom') {
 		const direct_list_raw = readfile(HP_DIR + '/resources/direct_list.txt');

@@ -138,6 +138,22 @@ export function build_context(dm, env) {
 		 * whole config.  Default false - an absent env must not turn into an
 		 * optimistic "assume the file is there". */
 		china_ip6_ready: (env?.china_ip6_ready === true),
+		/* Which enabled `type: local` rule-sets have a usable file on disk,
+		 * keyed by UCI section name: { '<section>': true }.
+		 *
+		 * Same shape of problem as china_ip6_ready and for the same reason it
+		 * lives in the CLI's env rather than under generator/ (guard 27): the
+		 * answer is a filesystem fact, and a `path` naming a file that is not
+		 * there makes `sing-box check` reject the whole configuration with
+		 * sing-box's own "parse rule-set[0]: open ...: no such file or
+		 * directory" - which names neither the rule-set the user created nor
+		 * the directory they are supposed to copy files into.  The generator
+		 * turns a missing entry into a message that names both (ruleset.uc).
+		 *
+		 * The default is pessimistic for the same reason: an env that forgot
+		 * the field (the server path, a future caller) must not turn "no file"
+		 * into "assume the file is there". */
+		ruleset_local_ready: (env?.ruleset_local_ready || {}),
 		self_mark, ntp_server, dns_port, mixed_port,
 		redirect_port, tproxy_port,
 		tun_name, tun_addr4, tun_addr6, tun_mtu,

@@ -2409,6 +2409,100 @@ else
 fi
 
 echo
+echo "== guard 50: the rule-set path policy is identical in both layers =="
+
+# The rule-set form's `path` and `initial_path` were bare form.Value options
+# with datatype='file', which in LuCI is `file() { return true; }` - so any
+# string saved, and the generator was the first thing to object.  Adding a
+# frontend validator means the same class of bug guard 29 pins for
+# certificates can now happen here instead: two lists, one per language, and
+# nothing able to see across the JS/ucode boundary.
+#
+# The failure is asymmetric on purpose.  A path the UI rejects but the backend
+# accepts is a UI bug; a path the UI accepts but the backend drops is the
+# dangerous one - the field vanishes from the generated configuration, the
+# rule-set silently reverts to a blocking first download, and the user is left
+# with a configuration that looks configured.  The generator now also refuses
+# loudly, but the UI check is what stops it at the field they are editing.
+#
+# Compared in BOTH directions, and also against the two places the policy has
+# to stay coherent beyond the lists themselves: the message the validator
+# shows, and the path the form offers as its placeholder / datalist entry.  A
+# placeholder naming a directory the validator refuses is the bug this guard
+# exists for, wearing a different hat.
+RULE_ROOTS="$(python3 - "$SCRIPTS/homeproxy.uc" "$VIEWS/homeproxy.js" "$VIEWS" <<'PY'
+import re, sys
+
+def roots(path, name, label):
+    text = open(path, encoding='utf-8').read()
+    m = re.search(r'\b%s\s*=\s*\[([^\]]*)\]' % name, text)
+    if not m:
+        return None, '%s: could not find %s' % (label, name)
+    return re.findall(r"'([^']+)'", m.group(1)), None
+
+problems = []
+backend, err = roots(sys.argv[1], 'RULE_PATH_ROOTS', 'homeproxy.uc')
+problems += [err] if err else []
+frontend, err = roots(sys.argv[2], 'HP_RULE_PATH_ROOTS', 'homeproxy.js')
+problems += [err] if err else []
+
+if not problems:
+    if backend != frontend:
+        problems.append('homeproxy.uc %s != homeproxy.js %s' % (backend, frontend))
+    elif not backend:
+        problems.append('RULE_PATH_ROOTS is empty - the rule-set gate would accept nothing')
+    else:
+        # Every root has to exist in the packaged tree, or the form points the
+        # user at a directory the package never creates.  uci-defaults creates
+        # the archive at install time and hp_prepare_ruleset_dir() before every
+        # generation, so the literal root string has to be the one those two
+        # agree on - a rename of the archive in only one of the three places
+        # would leave the user with an unsavable form.
+        for src, label in ((sys.argv[1], 'homeproxy.uc'), (sys.argv[2], 'homeproxy.js')):
+            text = open(src, encoding='utf-8').read()
+            for r in backend:
+                if r not in text:
+                    problems.append('%s does not mention the root %s' % (label, r))
+
+        # The offered default must be inside a declared root, and it must be
+        # the same string the frontend exposes as hp.rule_path_default.
+        js = open(sys.argv[2], encoding='utf-8').read()
+        m = re.search(r"\bHP_RULE_PATH_DEFAULT\s*=\s*'([^']+)'", js)
+        if not m:
+            problems.append('homeproxy.js: could not find HP_RULE_PATH_DEFAULT')
+        elif not any(m.group(1).startswith(r) and len(m.group(1)) > len(r) for r in backend):
+            problems.append('HP_RULE_PATH_DEFAULT %r is not inside any RULE_PATH_ROOTS entry %s'
+                            % (m.group(1), backend))
+        if not re.search(r'\brule_path_default:\s*HP_RULE_PATH_DEFAULT\b', js):
+            problems.append('homeproxy.js: HP_RULE_PATH_DEFAULT is not exported as rule_path_default,'
+                            ' so the view cannot quote it and would repeat the literal')
+
+        # The validator the rule-set form binds must be the one that closes
+        # over this list.  A form option pointing at the certificate validator
+        # would accept /etc/ssl/ and refuse the archive.
+        for view in ('client/subscription.js',):
+            body = open('%s/view/homeproxy/%s' % (sys.argv[3], view), encoding='utf-8').read()
+            for field in ('path', 'initial_path'):
+                m = re.search(r"option\(form\.Value,\s*'%s'.*?(?=so = |\Z)" % field, body, re.S)
+                if not m:
+                    problems.append('%s: no %s option found' % (view, field))
+                elif 'hp.validateRuleSetPath' not in m.group(0):
+                    problems.append('%s: the %s option does not bind hp.validateRuleSetPath'
+                                    % (view, field))
+
+print('\n'.join(problems))
+PY
+)" || RULE_ROOTS="__SCAN_FAILED__"
+if [ "$RULE_ROOTS" = "__SCAN_FAILED__" ]; then
+	fail "the rule-set-roots scan could not run - fix the guard before trusting a pass"
+elif [ -z "$RULE_ROOTS" ]; then
+	pass "the frontend and backend rule-set path roots agree, and the offered default is inside them"
+else
+	fail "the rule-set path policy is not coherent across the layers:"
+	printf '      %s\n' "$RULE_ROOTS"
+fi
+
+echo
 printf '%s checks, %s failures\n' "$checks" "$([ "$FAILED" = 0 ] && echo 0 || echo 'nonzero')"
 if [ "$FAILED" != 0 ]; then
 	echo "ARCHITECTURE GUARD FAILED"
