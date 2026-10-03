@@ -90,6 +90,61 @@ return baseclass.extend({
 	   user copies. */
 	rule_path_default: HP_RULE_PATH_DEFAULT,
 
+	/* Parse sing-box's rule-set download failures out of a log.
+	 *
+	 * With `ruleset_safe_start` on, a remote rule-set that cannot be
+	 * downloaded is no longer a failed start: sing-box reads the `initial_path`
+	 * fallback, comes up, and retries in the background, logging
+	 *
+	 *   2026-10-03 01:15:42 ERROR router: fetch rule-set geoip-cn: Get "https://…": dial tcp …
+	 *
+	 * That is a good trade, and it is also invisible: the instance is healthy,
+	 * the health gate passes, the LAN is proxied - and the rule-set that is
+	 * supposed to keep mainland traffic direct matches NOTHING, so all of it
+	 * goes to `final`.  The status page is the only place a user looks without
+	 * ssh, so it has to show this.
+	 *
+	 * Two deliberate choices about the format:
+	 *
+	 *   - the tag and the reason are matched on the stable part
+	 *     (`fetch rule-set <tag>:`) and nothing assumes sing-box's timestamp
+	 *     or level layout.  A rule-set whose download failed long ago and whose
+	 *     log line moves out of the file must not read as "no failures", so a
+	 *     missing timestamp is omitted rather than faked.
+	 *   - the last occurrence of a tag wins.  The file is truncated at 50 KB by
+	 *     clean_log.sh, so a tag that failed every 24 hours is in there
+	 *     repeatedly, and the most recent reason is the one that is true now.
+	 *
+	 * Returns [{ tag, reason, at }], newest last. Never throws: this reads a
+	 * file that may be empty, half-written, or rotated mid-read. */
+	parseRuleSetFetchFailures(text) {
+		const out = [];
+		if (!text)
+			return out;
+
+		const seen = {};
+
+		for (const line of String(text).split('\n')) {
+			const m = /fetch rule-set\s+([^\s:]+):\s*(.*)$/.exec(line);
+			if (!m)
+				continue;
+
+			const tag = m[1];
+			const at = /^(\d{4}-\d{2}-\d{2}[ T][0-9:.]+)/.exec(line);
+
+			if (seen[tag] !== undefined) {
+				out[seen[tag]].reason = m[2].trim();
+				out[seen[tag]].at = at ? at[1] : null;
+				continue;
+			}
+
+			seen[tag] = out.length;
+			out.push({ tag: tag, reason: m[2].trim(), at: at ? at[1] : null });
+		}
+
+		return out;
+	},
+
 	dns_strategy: {
 		'': _('Default'),
 		'prefer_ipv4': _('Prefer IPv4'),

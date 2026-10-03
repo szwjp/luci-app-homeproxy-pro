@@ -176,5 +176,73 @@ function makePoll() {
 	check('the registered handler calls read() when invoked', reads === 1, `${reads} reads`);
 }
 
+/* --- the rule-set degradation report ------------------------------------
+ *
+ * parseRuleSetFetchFailures() is the only thing that tells a user a rule-set
+ * is currently EMPTY, because with ruleset_safe_start on there is no other
+ * symptom: the instance is healthy, the health gate passes (nothing in
+ * health.sh looks at rule-sets), and the LAN is proxied.
+ *
+ * It parses a file sing-box is concurrently writing and that clean_log.sh
+ * truncates at 50 KB, so the cases below are about tolerance and about not
+ * lying: a missing timestamp must read as "no timestamp", never as a guess.
+ */
+const FAILURES = hp.parseRuleSetFetchFailures;
+
+const SAMPLE = [
+	'2026-10-03 01:15:42 INFO router: loaded rule-set geoip-cn',
+	'2026-10-03 01:15:42 ERROR router: fetch rule-set geoip-cn: Get "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs": dial tcp 1.2.3.4:443: connect: connection refused',
+	'2026-10-03 01:16:10 ERROR router: fetch rule-set geosite-cn: context deadline exceeded',
+	''
+].join('\n');
+
+check('an empty log yields no failures', FAILURES('').length === 0);
+check('a log of blank lines yields no failures', FAILURES('\n\n').length === 0);
+check('a log with no fetch lines yields no failures',
+	FAILURES('2026-10-03 01:15:42 INFO router: loaded rule-set geoip-cn').length === 0);
+
+const sample = FAILURES(SAMPLE);
+check('both failing tags are reported', sample.length === 2, JSON.stringify(sample));
+check('the tag is captured without the surrounding prose',
+	sample.map((f) => f.tag).join(',') === 'geoip-cn,geosite-cn',
+	JSON.stringify(sample.map((f) => f.tag)));
+check('the reason is captured',
+	sample[0].reason.startsWith('Get "https://'), JSON.stringify(sample[0].reason));
+check('the timestamp is captured',
+	sample[0].at === '2026-10-03 01:15:42', String(sample[0].at));
+check('a short reason is captured whole',
+	sample[1].reason === 'context deadline exceeded', JSON.stringify(sample[1].reason));
+
+/* A rule-set that fails on every 24-hour refresh is in the log many times, and
+ * the file is truncated - so the most recent line has to win, or the panel
+ * shows a reason from yesterday as if it were current. */
+const REPEATED = [
+	'2026-10-01 01:00:00 ERROR router: fetch rule-set geoip-cn: old failure',
+	'2026-10-03 01:00:00 ERROR router: fetch rule-set geoip-cn: new failure'
+].join('\n');
+const repeated = FAILURES(REPEATED);
+check('a repeated tag is reported once', repeated.length === 1, JSON.stringify(repeated));
+check('the most recent failure wins for a repeated tag',
+	repeated[0].reason === 'new failure', JSON.stringify(repeated[0].reason));
+
+/* clean_log.sh can cut mid-line, and a truncated line must not become a
+ * failure with a nonsense reason - but it must still name its tag, or the
+ * panel would hide a rule-set that really is failing. */
+const truncated = FAILURES('2026-10-03 01:00:00 ERROR router: fetch rule-set geoip-cn: Get "https://exa');
+check('a truncated line still names its tag', truncated.length === 1, JSON.stringify(truncated));
+check('a truncated line keeps the timestamp it has',
+	truncated[0].at === '2026-10-03 01:00:00', String(truncated[0].at));
+
+/* The format is not assumed. A line with no timestamp is still reported, with
+ * the time simply absent - the panel omits it rather than inventing one. */
+const noTime = FAILURES('ERROR router: fetch rule-set geosite-cn: dial tcp: i/o timeout');
+check('a line without a timestamp is still reported', noTime.length === 1, JSON.stringify(noTime));
+check('a line without a timestamp reports no time', noTime[0].at === null, String(noTime[0].at));
+check('a line without a timestamp still yields the reason',
+	noTime[0].reason === 'dial tcp: i/o timeout', JSON.stringify(noTime[0].reason));
+
+check('the parser tolerates null', FAILURES(null).length === 0);
+check('the parser tolerates undefined', FAILURES(undefined).length === 0);
+
 console.log(`frontend rpc fallbacks: ${checks} checks, ${failures} failures`);
 process.exit(failures ? 1 : 0);

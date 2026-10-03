@@ -173,12 +173,13 @@ export function validateRuleSetPath(p) {
 	return false;
 };
 
-/* RULE_PATH_ROOTS rendered for a diagnostic.  join(', ', RULE_PATH_ROOTS) is
- * not used: join() is variadic, and passing the array as one value would
- * stringify the list rather than join it - a message that reads
- * "/etc/homeproxy/ruleset/" is right, and one that reads
- * "/etc/homeproxy/ruleset/,/etc/homeproxy/ruleset/" is not, so this builds
- * the string the boring way and cannot drift. */
+/* RULE_PATH_ROOTS rendered for a diagnostic.
+ *
+ * join(', ', RULE_PATH_ROOTS) would do this in one line - it is the form
+ * firewall_utils.uc uses for its own lists, and ucode's join() does flatten an
+ * array argument rather than stringifying it.  The loop is kept anyway: it
+ * cannot be wrong about the separator, and this string ends up inside a die()
+ * a user reads in a log file. */
 export function rulePathRootsText() {
 	let text = '';
 

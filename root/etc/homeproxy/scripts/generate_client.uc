@@ -366,6 +366,28 @@ function resolve_env(dm) {
 		}
 	}
 
+	/* One line naming what is running on an empty fallback.
+	 *
+	 * The CLI already warns per rule-set when a fallback could not be written,
+	 * but "which rule-sets are currently on an EMPTY one" is the fact a user
+	 * needs and nothing else records it: the running configuration is not
+	 * readable by the browser, the health gate does not look at rule-sets, and
+	 * sing-box's own log only says the download failed.  This line is the
+	 * durable answer, and it goes to homeproxy.log, which the status page can
+	 * read with the permission it already has.
+	 *
+	 * Emitted only when the opt-in is on AND something actually got a
+	 * fallback, so the log does not gain a line on every generation of a
+	 * configuration that is not using the feature. */
+	if (dm.general.ruleset_safe_start === '1' && !isEmpty(env.ruleset_initial)) {
+		const tags = [];
+
+		for (let tag in env.ruleset_initial)
+			push(tags, tag);
+
+		warn(sprintf("homeproxy: ruleset_safe_start is on; these rule-sets have an EMPTY initial file and match nothing until their download succeeds: %s.", join(', ', tags)));
+	}
+
 	if (routing_mode !== 'custom') {
 		const direct_list_raw = readfile(HP_DIR + '/resources/direct_list.txt');
 		env.direct_domain_list = direct_list_raw ? split(trim(direct_list_raw), /[\r\n]/) : [];
