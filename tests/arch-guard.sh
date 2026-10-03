@@ -2729,6 +2729,72 @@ else
 fi
 
 echo
+echo "== guard 53: every dm.general field the generators read is one the Loader lists =="
+
+# config.general in the Loader is an EXPLICIT key list, not a pass-through of
+# the UCI section.  A field read as `dm.general.foo` that is not in that list
+# does not read as "absent" - it reads as "never set", and a `|| '0'` fallback
+# in context.uc then makes it indistinguishable from a user who deliberately
+# left the option off.
+#
+# That is not a hypothetical.  ruleset_safe_start was added to
+# /etc/config/homeproxy and read in context.uc, and nothing said the key was
+# missing: the configuration generated cleanly, `sing-box check` passed, every
+# test that did not look for the feature's effect was green, and the feature
+# was simply never on.  Only the e2e case that asserts an initial_path exists
+# could see it, and it read as a generator bug.
+#
+# So this compares the two lists mechanically.  The read set is derived from
+# what the code actually says, not from a hand-kept list, so a new option
+# cannot be added to one side and forgotten on the other.
+GENERAL_KEYS="$(python3 - "$SCRIPTS" <<'PY'
+import pathlib, re, sys
+
+scripts = pathlib.Path(sys.argv[1])
+loader = (scripts / 'config/loader.uc').read_text(encoding='utf-8')
+
+# What the Loader declares on config.general.
+m = re.search(r'config\.general\s*=\s*\{(.*?)\n\t\t\};', loader, re.S)
+if not m:
+    print('config/loader.uc: could not find the config.general object literal')
+    raise SystemExit(0)
+declared = set(re.findall(r'^\s*([a-z][a-z0-9_]*)\s*:', m.group(1), re.M))
+
+# What the consumers read off dm.general.  Comments stripped first: the prose
+# above ruleset_safe_start names dm.general.ruleset_safe_start on purpose, and a
+# substring search would read that as a use.
+def strip(src):
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    return '\n'.join(l for l in src.split('\n') if not l.lstrip().startswith(('#', '//')))
+
+readers = ['generator/context.uc', 'generate_client.uc']
+readers += [str(p.relative_to(scripts)) for p in sorted((scripts / 'generator').glob('*.uc'))]
+
+problems = []
+for rel in dict.fromkeys(readers):
+    f = scripts / rel
+    if not f.is_file():
+        continue
+    src = strip(f.read_text(encoding='utf-8'))
+    for key in sorted(set(re.findall(r'\bdm\.general\.([a-z][a-z0-9_]*)', src))):
+        if key not in declared:
+            problems.append('%s reads dm.general.%s, which the Loader does not declare - '
+                            'the value is always null there, so a `||` fallback makes the '
+                            'option indistinguishable from one the user never set' % (rel, key))
+
+print('\n'.join(problems))
+PY
+)" || GENERAL_KEYS="__SCAN_FAILED__"
+if [ "$GENERAL_KEYS" = "__SCAN_FAILED__" ]; then
+	fail "the general-key scan could not run - fix the guard before trusting a pass"
+elif [ -z "$GENERAL_KEYS" ]; then
+	pass "every dm.general field the generators and the CLI read is declared by the Loader"
+else
+	fail "the Loader and its consumers disagree about the config section's keys:"
+	printf '      %s\n' "$GENERAL_KEYS"
+fi
+
+echo
 printf '%s checks, %s failures\n' "$checks" "$([ "$FAILED" = 0 ] && echo 0 || echo 'nonzero')"
 if [ "$FAILED" != 0 ]; then
 	echo "ARCHITECTURE GUARD FAILED"
