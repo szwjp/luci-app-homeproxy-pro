@@ -740,6 +740,21 @@ export function wGETVerbose(url, ua) {
 		return { content: null, error: `fetch exited with status ${output.exitcode}: ${reason || 'no error output'}` };
 	}
 
+	/* A binary body is not a failed fetch.
+	 *
+	 * executeCommand() nulls stdout for binary content - a subscription body
+	 * that is not text cannot be parsed by anything downstream - and without
+	 * this branch the "no content, but stderr said something" test below
+	 * reported the result as
+	 *
+	 *   fetch failed: Downloading '…' … Download completed (34185 bytes)
+	 *
+	 * which contradicts itself, and which would send a user looking for a
+	 * network problem they do not have.  Measured on a device, with a real
+	 * .srs fetched from a URL that answered 200. */
+	if (output.binary)
+		return { content: null, error: 'the fetch succeeded but the response is binary, not a subscription payload' };
+
 	/* head() masks the fetcher's status, so a failed fetch shows up here. */
 	if (!length(trim(output.stdout)) && reason) {
 		if (length(reason) > 200)

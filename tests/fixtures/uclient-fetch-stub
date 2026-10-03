@@ -80,6 +80,13 @@ case "$url" in
 	say "HTTP error 404"
 	exit 8
 	;;
+*HP_T_STUB_BINARY*)
+	# A 200 with a binary body.  This is the shape that used to be reported
+	# as "fetch failed: … Download completed (34185 bytes)".
+	say "Download completed (14 bytes)"
+	printf 'SRS\002x\332b\000\014\000\000\001\000\001'
+	exit 0
+	;;
 esac
 
 say "Failed to send request: Operation not permitted"

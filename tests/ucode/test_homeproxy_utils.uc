@@ -104,6 +104,18 @@ expect('fetch.not-a-usage-error',
 expect('fetch.reports-a-reason', length(fetch.error || '') > 0, true);
 expect('fetch.no-content-on-failure', fetch.content, null);
 
+/* A 200 whose body is binary.  executeCommand() nulls stdout for binary
+ * content, and the "no content but stderr said something" branch then used to
+ * report it as `fetch failed: … Download completed (34185 bytes)` - a message
+ * that contradicts itself and sends the user after a network problem they do
+ * not have.  Measured on a device against a real .srs. */
+const binfetch = wGETVerbose('http://127.0.0.1:1/HP_T_STUB_BINARY');
+expect('fetch.binary-is-not-a-failure',
+	match(binfetch.error || '', /fetch failed/) == null, true, binfetch.error);
+expect('fetch.binary-says-so',
+	match(binfetch.error || '', /binary/) != null, true, binfetch.error);
+expect('fetch.binary-has-no-content', binfetch.content, null);
+
 /* Review H3: the fetcher announces the requested URL on stderr before it reports
  * anything else, query string and all, so this is what would reach the log.
  *
