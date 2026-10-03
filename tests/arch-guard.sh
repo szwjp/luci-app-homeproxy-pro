@@ -2616,6 +2616,119 @@ else
 fi
 
 echo
+echo "== guard 52: the startup fallback stays opt-in, and the two sides stay in step =="
+
+# ruleset_safe_start points every remote rule-set that has no initial file of
+# its own at an EMPTY rule-set, so sing-box starts immediately instead of
+# fetching during initialization - before the inbounds bind.  On a cold cache
+# that is the difference between a router that comes up and one that waits on
+# raw.githubusercontent.com, through the node, before it will listen at all.
+#
+# It is opt-in because the fallback is empty on purpose: a rule-set with no
+# rules matches nothing, so everything it would have split falls through to
+# `final`.  On bypass_mainland_china that means mainland destinations can be
+# proxied until the download succeeds.  That is a routing change, so the
+# default must stay off, exactly as sniffer_advanced_mode's does.
+#
+# The rest of the guard is about the mechanism being one mechanism: the CLI
+# writes the file and the generator points at it, and a disagreement between
+# them is silent and fatal (a wrong-format or missing initial file is ignored
+# by sing-box, which then blocks startup exactly as if none existed).
+SAFE_START="$(python3 - "$ROOT" "$SCRIPTS" <<'PY'
+import pathlib, re, sys
+
+root, scripts = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+config_uc = (root / 'root/etc/config/homeproxy').read_text(encoding='utf-8')
+context_uc = (scripts / 'generator/context.uc').read_text(encoding='utf-8')
+route_uc = (scripts / 'generator/route.uc').read_text(encoding='utf-8')
+ruleset_uc = (scripts / 'generator/ruleset.uc').read_text(encoding='utf-8')
+common_uc = (scripts / 'generator/common.uc').read_text(encoding='utf-8')
+homeproxy_uc = (scripts / 'homeproxy.uc').read_text(encoding='utf-8')
+client_uc = (scripts / 'generate_client.uc').read_text(encoding='utf-8')
+problems = []
+
+def strip_comments(src):
+    src = re.sub(r'/\*[\s\S]*?\*/', '', src)
+    return '\n'.join(l for l in src.split('\n') if not l.lstrip().startswith(('#', '//', '*')))
+
+# (a) The default, in both places it is stated.  Same shape as guard 39.
+if "ruleset_safe_start: dm.general.ruleset_safe_start || '0'" not in context_uc:
+    problems.append("context.uc no longer falls back to '0' for ruleset_safe_start; a missing "
+                    "UCI value would have to mean something other than the safe default")
+if not re.search(r"^\toption ruleset_safe_start '0'$", config_uc, re.M):
+    problems.append("the package-shipped /etc/config/homeproxy no longer ships ruleset_safe_start "
+                    "'0'; upgrading users would silently start routing with empty rule-sets")
+
+# (b) An initial_path may only be emitted for a fallback that exists.  Both
+#     sites, because one without the other is the silent failure.
+if "ctx.ruleset_initial" not in strip_comments(route_uc):
+    problems.append('route.uc emits initial_path without checking ctx.ruleset_initial; a built-in '
+                    'could be pointed at a file the CLI never wrote')
+if "ctx.ruleset_initial" not in strip_comments(ruleset_uc):
+    problems.append('ruleset.uc emits initial_path without checking ctx.ruleset_initial')
+if 'ruleset_initial' not in client_uc:
+    problems.append('generate_client.uc no longer writes the fallbacks, so ctx.ruleset_initial is '
+                    'always empty and the opt-in does nothing')
+
+# (c) The built-ins come from the shared list.  route.uc hard-coding the tags
+#     is how the two readers drifted in the first place: the CLI had no idea
+#     these rule-sets existed.
+for tag in ('geoip-cn', 'geosite-cn'):
+    if re.search(r"tag:\s*'%s'" % re.escape(tag), strip_comments(route_uc)):
+        problems.append("route.uc hard-codes tag '%s' again; it must come from "
+                        "BUILTIN_REMOTE_RULE_SETS so the CLI can create its fallback" % tag)
+if 'BUILTIN_REMOTE_RULE_SETS' not in route_uc:
+    problems.append('route.uc no longer reads BUILTIN_REMOTE_RULE_SETS')
+if 'BUILTIN_REMOTE_RULE_SETS' not in client_uc:
+    problems.append('generate_client.uc no longer reads BUILTIN_REMOTE_RULE_SETS')
+
+# (d) The shipped constant, byte for byte.  It is a binary artifact in the
+#     tree, and a corrupted one fails in the worst possible way: sing-box
+#     cannot parse the initial file, ignores it, and blocks startup - the
+#     exact failure the file exists to prevent.  Comparing the bytes here is
+#     the only thing standing between a bad `cp` and that.
+expected_srs = bytes([0x53, 0x52, 0x53, 0x02, 0x78, 0xDA, 0x62, 0x00,
+                      0x0C, 0x00, 0x00, 0x01, 0x00, 0x01])
+srs = root / 'root/etc/homeproxy/ruleset/initial/empty.srs'
+src = root / 'root/etc/homeproxy/ruleset/initial/empty.source.json'
+if not srs.is_file():
+    problems.append('the offline fallback %s is missing from the package payload' % srs)
+elif srs.read_bytes() != expected_srs:
+    problems.append('%s is %s, not the documented %s; it is the last-resort binary '
+                    'fallback and a corrupted one makes sing-box block startup'
+                    % (srs.name, srs.read_bytes().hex(' '), expected_srs.hex(' ')))
+if not src.is_file():
+    problems.append('the empty source %s is missing from the package payload' % src)
+elif src.read_bytes() != b'{"version":3,"rules":[]}':
+    problems.append('%s is %r, not the documented empty source' % (src.name, src.read_bytes()))
+
+# (e) The fallbacks live inside the rule-set archive, so the existing jail
+#     mount of HP_DIR and the existing path whitelist both already cover them.
+#     A directory outside the archive would need a whitelist change and a new
+#     jail mount, and neither exists.
+m = re.search(r"RULESET_INITIAL_DIR\s*=\s*HP_DIR \+ '([^']*)'", homeproxy_uc)
+if not m:
+    problems.append('RULESET_INITIAL_DIR is gone or no longer derived from HP_DIR')
+elif not m.group(1).startswith('/ruleset/'):
+    problems.append('RULESET_INITIAL_DIR is %r, outside the rule-set archive; the jail mount and '
+                    'the path whitelist would not cover it' % m.group(1))
+if 'RULESET_INITIAL_DIR' not in common_uc and 'BUILTIN_REMOTE_RULE_SETS' not in common_uc:
+    problems.append('common.uc no longer carries the shared built-in list')
+
+print('\n'.join(problems))
+PY
+)" || SAFE_START="__SCAN_FAILED__"
+if [ "$SAFE_START" = "__SCAN_FAILED__" ]; then
+	fail "the safe-start scan could not run - fix the guard before trusting a pass"
+elif [ -z "$SAFE_START" ]; then
+	pass "the startup fallback is opt-in, both sides read one shared list, and the"
+	pass "  shipped constant is byte-for-byte the documented one"
+else
+	fail "the startup fallback has been broken or silently enabled:"
+	printf '      %s\n' "$SAFE_START"
+fi
+
+echo
 printf '%s checks, %s failures\n' "$checks" "$([ "$FAILED" = 0 ] && echo 0 || echo 'nonzero')"
 if [ "$FAILED" != 0 ]; then
 	echo "ARCHITECTURE GUARD FAILED"

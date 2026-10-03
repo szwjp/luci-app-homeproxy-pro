@@ -256,6 +256,29 @@ export function build_context(dm, env) {
 		 * Default '0' preserves the
 		 * 300ms / default-list behaviour so an upgrade is invisible. */
 		sniffer_advanced_mode: dm.general.sniffer_advanced_mode || '0',
+		/* ruleset_safe_start: when '1' (opt-in), every enabled remote
+		 * rule-set that has no initial_path of its own gets one, pointing at
+		 * an EMPTY rule-set the generator writes before the config is
+		 * checked.  A remote rule-set with no initial file is fetched during
+		 * initialization, before the inbounds bind, so on a cold cache the
+		 * first start depends on the CDN being reachable - and on the node,
+		 * because the fetch goes through http_clients.
+		 *
+		 * The fallback is empty on purpose and that is the trade: a rule-set
+		 * with no rules matches nothing, so its traffic falls through to
+		 * `final`.  That is a routing change, not a robustness tweak, which
+		 * is why the default is '0' and why the whole repository stays
+		 * fail-loud by default.  Guard 52 pins the default, the way guard 39
+		 * pins sniffer_advanced_mode's. */
+		ruleset_safe_start: dm.general.ruleset_safe_start || '0',
+		/* Which empty startup fallbacks the CLI actually wrote, keyed by
+		 * rule_set tag.  Presence, not a path: the generator emits
+		 * `initial_path` only for tags it can point at, so a fallback that
+		 * could not be written leaves that rule-set on today's behaviour
+		 * rather than pointing at a file that is not there.  Pessimistic by
+		 * construction - an env that forgot the field (the server path) has
+		 * no fallbacks, and the server declares no remote rule-sets anyway. */
+		ruleset_initial: (env?.ruleset_initial || {}),
 		main_urltest_nodes: dm.general.main_urltest_nodes || [],
 		main_urltest_interval: dm.general.main_urltest_interval,
 		main_urltest_tolerance: dm.general.main_urltest_tolerance,
