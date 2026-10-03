@@ -115,6 +115,17 @@ return baseclass.extend({
 	 *     clean_log.sh, so a tag that failed every 24 hours is in there
 	 *     repeatedly, and the most recent reason is the one that is true now.
 	 *
+	 * The timestamp shape is the one thing that IS pinned, and it was pinned
+	 * from a real 1.14.2 line rather than guessed - the device writes
+	 *
+	 *   +0800 2026-10-03 09:29:34 ERROR router: fetch rule-set geoip-cn: Get ...
+	 *
+	 * i.e. a UTC offset BEFORE the date.  An earlier version of this anchored
+	 * the date at the start of the line and therefore returned no time for
+	 * every real line, which is the one shape the panel is supposed to show.
+	 * The offset is optional in the pattern so a build that omits it still
+	 * parses.
+	 *
 	 * Returns [{ tag, reason, at }], newest last. Never throws: this reads a
 	 * file that may be empty, half-written, or rotated mid-read. */
 	parseRuleSetFetchFailures(text) {
@@ -130,7 +141,7 @@ return baseclass.extend({
 				continue;
 
 			const tag = m[1];
-			const at = /^(\d{4}-\d{2}-\d{2}[ T][0-9:.]+)/.exec(line);
+			const at = /^(?:[+-]\d{4}\s+)?(\d{4}-\d{2}-\d{2}[ T][0-9:.]+)/.exec(line);
 
 			if (seen[tag] !== undefined) {
 				out[seen[tag]].reason = m[2].trim();
