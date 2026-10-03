@@ -76,45 +76,83 @@ expect('pem.key-as-cert', isValidPEM(pem_key, false), false);
 expect('pem.garbage', isValidPEM('not a pem at all', false), false);
 expect('pem.empty', isValidPEM('', false), false);
 
-/* wGETVerbose() must not hand wget an option the target's wget does not have.
- * It used to pass --max-filesize, which busybox wget does not support: wget
- * exited 2 with "unrecognized option" before making a request, so every
- * subscription fetch failed while the test suite stayed green (the fetcher
- * tests mock wGETVerbose itself).  A closed local port makes the fetch fail
- * fast either way; what is asserted is that it fails for a network reason and
- * not a usage one. */
-const wget = wGETVerbose('http://127.0.0.1:1/never');
-expect('wget.not-a-usage-error',
-	match(wget.error || '', /unrecognized option|invalid option|Usage:/) == null, true);
-expect('wget.reports-a-reason', length(wget.error || '') > 0, true);
-expect('wget.no-content-on-failure', wget.content, null);
+/* wGETVerbose() must not hand the fetcher an option the fetcher does not
+ * have.
+ *
+ * This guard already existed once, for --max-filesize, and then failed to catch
+ * the same class again: the fetch shelled out to `wget` with GNU-only options
+ * (-nv --user-agent --timeout=), and `wget` is whichever implementation the
+ * firmware's buildroot compiled.  On a busybox-wget router every one of those is
+ * rejected with "unrecognized option" before a request is made, so every
+ * subscription fetch, every resource update and the connectivity check failed -
+ * while this test ran against GNU wget on CI and on the maintainer's own
+ * device, and stayed green.
+ *
+ * So the guard now runs against tests/fixtures/uclient-fetch-stub, which
+ * accepts exactly the option list read off the applet on a real device and
+ * rejects everything else the way the applet does.  The accepted set is PINNED
+ * rather than inherited from the host, which is the part that was missing.
+ * (On a target, where /bin/uclient-fetch really exists, fetchBinary() returns
+ * it and these same assertions run against the real applet - so an option
+ * nobody verified is caught both off-target and on it.)
+ *
+ * A closed local port makes the fetch fail fast either way; what is asserted is
+ * that it fails for a NETWORK reason and not a usage one. */
+const fetch = wGETVerbose('http://127.0.0.1:1/never');
+expect('fetch.not-a-usage-error',
+	match(fetch.error || '', /unrecognized option|invalid option|Usage:/) == null, true);
+expect('fetch.reports-a-reason', length(fetch.error || '') > 0, true);
+expect('fetch.no-content-on-failure', fetch.content, null);
 
-/* Review H3: an HTTP-level wget failure echoes the target, query string and
- * all, so `<URL>?token=secret: 404 Not Found` is what would reach the log.
- * A *connection* failure is the cheap case to reproduce here, but wget prints
- * only `failed: Connection refused.` for it - no URL - so this fetch proves
- * the end-to-end path hands back no token, not that redaction ran.  The
- * redactReason() block below covers redaction itself, using the shapes wget
- * actually emits. */
-const tokwget = wGETVerbose('http://127.0.0.1:1/?token=secret');
-expect('wget.token-not-in-error',
-	match(tokwget.error || '', /token=secret/) == null, true);
+/* Review H3: the fetcher announces the requested URL on stderr before it reports
+ * anything else, query string and all, so this is what would reach the log.
+ *
+ * The old version of this test pointed at a *connection* failure, where the URL
+ * happens not to appear - which meant it proved only that the quiet path stayed
+ * quiet, never that redaction ran.  The stub announces the URL the way the real
+ * applet does, so this now exercises redactReason() through the whole
+ * wGETVerbose() path.  The redactReason() block below still covers redaction on
+ * its own, against shapes no stub can be asked to produce. */
+const tokfetch = wGETVerbose('http://127.0.0.1:1/?token=secret');
+expect('fetch.token-not-in-error',
+	match(tokfetch.error || '', /token=secret/) == null, true);
+/* Redaction must not swallow the diagnostic: the target host still has to be
+ * readable, or the message says nothing about what was being fetched. */
+expect('fetch.redacted-still-names-the-target',
+	match(tokfetch.error || '', /127\.0\.0\.1/) != null, true, tokfetch.error);
+
+/* The HTTP-error shape is the one that leaks - "Downloading '<URL>'" followed
+ * by "HTTP error 404" - and it is the common case for a subscription URL that
+ * has expired. */
+const httpfetch = wGETVerbose('http://127.0.0.1:1/HP_T_STUB_HTTP_ERROR?token=secret');
+expect('fetch.http-error-token-not-in-error',
+	match(httpfetch.error || '', /token=secret/) == null, true);
+expect('fetch.http-error-keeps-the-status',
+	match(httpfetch.error || '', /HTTP error/) != null, true, httpfetch.error);
 
 /* redactReason(): central redaction that protects every wGETVerbose caller.
- * Tested in isolation so the assertion does not depend on wget being
+ * Tested in isolation so the assertion does not depend on any fetcher being
  * present - this runs anywhere ucode runs. */
 {
-	/* Canonical wget failure shape: '<URL>: <reason>' - the URL must lose
-	 * its query string and userinfo. */
-	const r1 = redactReason('https://user:tok@host.example.com/path?q=token=secret: Bad port \'80080\'.');
+	/* The shape uclient-fetch actually emits, copied from a device run:
+	 *
+	 *   Downloading 'https://user:tok@host.example.com/path?q=token=secret'
+	 *   HTTP error 404
+	 *
+	 * It announces the target BEFORE it says anything else, which is why
+	 * wGETVerbose does not pass -q - and it is therefore the shape that has
+	 * to be redacted.  The URL must lose its query string and its userinfo,
+	 * and the host has to survive, or the message says nothing about what was
+	 * being fetched. */
+	const r1 = redactReason("Downloading 'https://user:tok@host.example.com/path?q=token=secret' HTTP error 404");
 	expect('redactReason.query',
-		match(r1, /\?\*\*\*/) != null, true);
+		match(r1, /\?\*\*\*/) != null, true, r1);
 	expect('redactReason.userinfo',
-		match(r1, /user:tok/) == null, true);
+		match(r1, /user:tok/) == null, true, r1);
 	expect('redactReason.host-preserved',
-		match(r1, /host\.example\.com/) != null, true);
+		match(r1, /host\.example\.com/) != null, true, r1);
 	expect('redactReason.reason-preserved',
-		match(r1, /Bad port/) != null, true);
+		match(r1, /HTTP error 404/) != null, true, r1);
 
 	/* A second URL in the same message - both must be redacted. */
 	const r2 = redactReason('first https://a.example/?token=A then https://b.example/?token=B end');
@@ -123,7 +161,8 @@ expect('wget.token-not-in-error',
 
 	/* No URL at all: returned unchanged. */
 	expect('redactReason.no-url-unchanged',
-		redactReason('wget: bad port'), 'wget: bad port');
+		redactReason('Failed to send request: Operation not permitted'),
+		'Failed to send request: Operation not permitted');
 
 	/* Empty / non-string: returned unchanged (the function is safe to
 	 * apply to the trimmed stderr without a guard). */
@@ -133,7 +172,7 @@ expect('wget.token-not-in-error',
 
 	/* URL with port: the port must survive (the path is what we keep;
 	 * only query and userinfo go). */
-	const r3 = redactReason('wget: https://host:80080/path?q=token=secret: failed');
+	const r3 = redactReason("Downloading 'https://host:80080/path?q=token=secret' HTTP error 500");
 	expect('redactReason.port-survives',
 		match(r3, /host:80080/) != null, true);
 	expect('redactReason.port-query-redacted',

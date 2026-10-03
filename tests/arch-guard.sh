@@ -730,12 +730,22 @@ echo
 echo "== guard 14: wGETVerbose redacts the URL at the source =="
 
 # Review H3: the original fetcher.uc logged a redacted URL but returned the
-# raw wget stderr, which still had the full URL (wget -nv reports the target
-# on the failure line, query string and all).  Every caller of wGETVerbose
-# had to remember to redact the error themselves, and any that did not -
-# silently leaked the subscription token.  The fix moved redaction into
-# wGETVerbose itself, so the returned `error` is safe no matter where the
+# raw fetcher stderr, which still had the full URL.  Every caller of
+# wGETVerbose had to remember to redact the error themselves, and any that
+# did not silently leaked the subscription token.  The fix moved redaction
+# into wGETVerbose itself, so the returned `error` is safe no matter where the
 # caller ships it.
+#
+# The leak is not hypothetical under either fetcher: GNU wget -nv reports the
+# target on the failure line, and uclient-fetch reports it by default, before
+# it reports anything else -
+#
+#   Downloading 'https://host/path?token=secret'
+#   HTTP error 404
+#
+# which is precisely why wGETVerbose does NOT pass -q.  Quiet mode would have
+# taken the URL out of the message and, with it, the only thing separating an
+# HTTP 404 from a connect failure.
 HOMEPROXY="$SCRIPTS/homeproxy.uc"
 FETCHER="$SCRIPTS/subscription/fetcher.uc"
 
@@ -2330,12 +2340,12 @@ echo "== guard 48: the connection check probes the configured address family =="
 # IPv4 worked; Baidu passed only because its IPv6 goes out direct. Pin the two
 # halves: the backend has to force the family, and the verdict has to say which
 # one, or "passed" stays unfalsifiable.
-if grep -qF "wget -\${(family === 'IPv6') ? '6' : '4'} --spider" "$RPC" &&
+if grep -qF "\${fetchBinary()} -\${(family === 'IPv6') ? '6' : '4'} -q -s -T3" "$RPC" &&
    grep -qF "uci.get('homeproxy', 'config', 'ipv6_support')" "$RPC"; then
 	pass "connection_check forces the address family from homeproxy.config.ipv6_support"
 else
 	fail "connection_check does not force an address family - the result is whatever"
-	fail "busybox wget happens to try first, which is how a working proxy reads as failed"
+	fail "the fetcher happens to try first, which is how a working proxy reads as failed"
 fi
 
 if grep -qF "family: family" "$RPC"; then
@@ -2792,6 +2802,90 @@ elif [ -z "$GENERAL_KEYS" ]; then
 else
 	fail "the Loader and its consumers disagree about the config section's keys:"
 	printf '      %s\n' "$GENERAL_KEYS"
+fi
+
+echo
+echo "== guard 54: the fetch layer uses uclient-fetch, and nothing reintroduces wget =="
+
+# `wget` is whichever implementation the firmware buildroot compiled, and the
+# two share almost no options beyond -O.  Every fetch in this package used to
+# shell out to it with GNU-only flags (-nv --user-agent --timeout= --spider),
+# which exits 2 with "unrecognized option" on a busybox-wget router BEFORE any
+# request is made - so subscriptions never fetched, resource lists never
+# updated, and the connectivity check reported a failed proxy.  Reported as
+# issue #6.
+#
+# What let it survive several releases is the interesting part: the suite had a
+# guard for the exact shape (the fetch must not fail with a usage error) and it
+# only ever ran against the fetcher the host already had - GNU wget on CI, GNU
+# wget on the maintainer device.  So this guard is not only "no wget" but also
+# "and the test that would have caught it runs against a pinned stub".
+#
+# uclient-fetch is the fetcher OpenWrt itself drives (opkg, sysupgrade, uci) and
+# its option set is fixed by the applet rather than by the buildroot, which is
+# the only reason one command line can be correct on every target.
+FETCH_LAYER="$(python3 - "$ROOT" "$SCRIPTS" "$RPC" <<'PY'
+import pathlib
+import re
+import sys
+
+root, scripts, rpc = (pathlib.Path(p) for p in sys.argv[1:4])
+problems = []
+
+
+def code_only(path):
+    """Source with block comments and comment-only lines removed.
+
+    Comments are excluded on purpose: several of them explain WHY wget is not
+    used, and a guard that flagged its own documentation would be deleted
+    rather than obeyed.
+    """
+    src = path.read_text(encoding="utf-8")
+    src = re.sub(r"/\*[\s\S]*?\*/", "", src)
+    lines = [l for l in src.split("\n") if not l.lstrip().startswith(("#", "//"))]
+    return "\n".join(lines)
+
+
+# 1. No wget anywhere it could actually be invoked.
+wget_call = re.compile(r"(?<![\w/-])wget(?![\w-])")
+targets = [p for p in scripts.rglob("*") if p.is_file() and p.suffix in (".uc", ".sh")]
+targets.append(rpc)
+for path in targets:
+    for line in code_only(path).split("\n"):
+        if wget_call.search(line):
+            problems.append("%s still invokes wget: %s" % (path.name, line.strip()[:90]))
+
+# 2. The fetcher has to be a declared dependency, or a firmware without it in
+#    base leaves every fetch broken in a much quieter way.
+if "+uclient-fetch" not in (root / "Makefile").read_text(encoding="utf-8"):
+    problems.append("the Makefile does not declare +uclient-fetch; the fetch layer "
+                    "depends on a package it does not require")
+
+# 3. The guard that would have caught this has to run against a stub whose
+#    accepted option set is pinned, not against the host own fetcher.
+runner = (root / "tests/ucode/run.sh").read_text(encoding="utf-8")
+stub = root / "tests/fixtures/uclient-fetch-stub"
+if "tests/fixtures/uclient-fetch-stub" not in runner:
+    problems.append("tests/ucode/run.sh no longer points the fetch guard at the pinned stub")
+if not stub.is_file():
+    problems.append("the pinned fetch stub is missing from the package payload")
+elif "unrecognized option" not in stub.read_text(encoding="utf-8"):
+    # A permissive stub cannot catch the regression, which is the whole point:
+    # it has to reject what it does not recognise, the way the applet does.
+    problems.append("the fetch stub does not reject unknown options, so it cannot "
+                    "catch an option nobody verified")
+
+print("\n".join(problems))
+PY
+)" || FETCH_LAYER="__SCAN_FAILED__"
+if [ "$FETCH_LAYER" = "__SCAN_FAILED__" ]; then
+	fail "the fetch-layer scan could not run - fix the guard before trusting a pass"
+elif [ -z "$FETCH_LAYER" ]; then
+	pass "no wget in the fetch layer, uclient-fetch is a declared dependency, and the"
+	pass "  guard that catches a bad option runs against a pinned stub"
+else
+	fail "the fetch layer is not pinned to one fetcher:"
+	printf '      %s\n' "$FETCH_LAYER"
 fi
 
 echo

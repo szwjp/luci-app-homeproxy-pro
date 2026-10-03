@@ -631,6 +631,28 @@ export function redactReason(reason) {
  * reason is wget's own stderr (whitespace collapsed, length-capped) so the
  * caller can tell a DNS failure from a timeout or a TLS handshake error.
  */
+/* fetchBinary() -> the path to invoke the fetch layer with.
+ *
+ * uclient-fetch is base OpenWrt, and it lives in /bin on every target measured
+ * so far - but "base package" is a packaging fact, not a path guarantee, and
+ * the whole point of the switch is not to hard-code an assumption that some
+ * buildroot can violate.  So: the two known locations first, then PATH as the
+ * fallback, which is also what makes the test suite able to shadow it with a
+ * stub.
+ *
+ * Declared before wGETVerbose() on purpose - see the note above
+ * redactReason() about ucode not hoisting exported functions. */
+export function fetchBinary() {
+	for (let p in [ '/bin/uclient-fetch', '/usr/bin/uclient-fetch' ]) {
+		/* One-argument access() is the only form this ucode build answers;
+		 * see the china_ip6_ready note in generate_client.uc. */
+		if (access(p))
+			return p;
+	}
+
+	return 'uclient-fetch';
+};
+
 export function wGETVerbose(url, ua) {
 	if (!url || type(url) !== 'string')
 		return { content: null, error: 'invalid URL' };
@@ -638,37 +660,73 @@ export function wGETVerbose(url, ua) {
 	if (!ua)
 		ua = 'Wget/1.21 (HomeProxy, like v2rayN)';
 
-	/* -nv (not -q) so wget still reports *why* a fetch failed on stderr.
+	/* Why uclient-fetch and not wget: `wget` is whatever the firmware's
+	 * buildroot happened to compile, and the two implementations do not share
+	 * a single option beyond -O.  A command line that works on one of them
+	 * exits 2 on the other with "unrecognized option" *before making a single
+	 * request*, which is how every subscription fetch, every resource-list
+	 * update and the connectivity check failed on a busybox-wget router while
+	 * the suite stayed green - the guard below only ever ran against GNU
+	 * wget, on CI and on the maintainer's own device.
 	 *
-	 * The size cap is enforced by piping through `head -c`, NOT with wget's
-	 * --max-filesize: that option does not exist in busybox wget (the target's
-	 * /usr/bin/wget), which exits 2 with "unrecognized option" before making a
-	 * single request - so every subscription fetch failed. GNU wget has no
-	 * such option either. `head` closing the pipe stops wget early, which
-	 * bounds the download; the cap is therefore CAP+1 bytes rather than
-	 * exactly CAP, and one byte past the limit means "too large".
+	 * uclient-fetch is the fetcher OpenWrt itself ships and drives (opkg,
+	 * sysupgrade, uci), with an option set fixed by the applet rather than by
+	 * the buildroot, so one command line is correct on every target.  Its
+	 * interface was read off the applet on the device, not from memory:
+	 *
+	 *   -O <file>            stdout is "-"
+	 *   --user-agent <str>   -U
+	 *   --timeout=N | -T N  seconds, same unit as the --timeout= it replaces
+	 *   --spider | -s       existence check only
+	 *   --header='K: V'     note the '=': the space-separated form is not
+	 *                       accepted, and the value is ONE argv element
+	 *
+	 * No --quiet, deliberately: the point of capturing stderr is to report
+	 * *why* a fetch failed, and uclient-fetch's default stderr is better than
+	 * wget's -nv was - on an HTTP error it prints
+	 *
+	 *   Downloading 'https://…/x.srs?token=…'
+	 *   Connecting to 185.199.111.133:443
+	 *   HTTP error 404
+	 *
+	 * including the resolved address.  The URL is in there, so this depends on
+	 * redactReason() below; guard 14 is what keeps that honest.  Quiet mode
+	 * would have removed the URL from the message and, with it, the only
+	 * thing distinguishing an HTTP 404 from a connect failure.
+	 *
+	 * The size cap is still enforced by piping through `head -c`, not by a
+	 * fetcher option: there is no such option in either implementation, and
+	 * `head` closing the pipe stops the download early.  The cap is therefore
+	 * CAP+1 bytes rather than exactly CAP, and one byte past the limit means
+	 * "too large".
 	 *
 	 * 5 MiB covers a 10 000-node subscription with ~3 KB per node plus the
 	 * base64 inflation. Anything larger is almost certainly an attack or a
 	 * misconfiguration.
 	 *
 	 * The pipeline does cost the exit status: `system()` returns head's, which
-	 * is always 0. A wget failure therefore arrives as an empty body plus
-	 * wget's own message on stderr, and that is reported below. */
+	 * is always 0. A fetch failure therefore arrives as an empty body plus the
+	 * fetcher's own message on stderr, and that is reported below. */
 	/* The braces matter: executeCommand() appends `>out 2>err` to the command,
-	 * and in `a | b >out 2>err` those redirections bind to b only - wget's
-	 * stderr would go to the caller's terminal and the failure message would
-	 * be lost.  Grouping the pipeline makes both stream to the capture files. */
-	const output = executeCommand(`{ /usr/bin/wget -nv -O- --user-agent ${shellQuote(ua)} --timeout=10 ${shellQuote(url)} | head -c ${HP_FETCH_CAP + 1}; }`) || {};
+	 * and in `a | b >out 2>err` those redirections bind to b only - the
+	 * fetcher's stderr would go to the caller's terminal and the failure
+	 * message would be lost.  Grouping the pipeline makes both stream to the
+	 * capture files.
+	 *
+	 * fetchBinary() is shellQuote()d like everything else here rather than
+	 * being waved through on the grounds that it only ever returns a literal:
+	 * guard 25 exists to make "is this shell-safe" a mechanical check instead
+	 * of a judgement call, and a quoted constant costs nothing. */
+	const output = executeCommand(`{ ${shellQuote(fetchBinary())} -O - --user-agent=${shellQuote(ua)} --timeout=10 ${shellQuote(url)} | head -c ${HP_FETCH_CAP + 1}; }`) || {};
 	let reason = trim(output.stderr || '');
 	reason = reason ? replace(reason, /\s+/g, ' ') : '';
-	/* Review H3: an HTTP-level wget failure echoes the full URL - query
-	 * string and subscription token included - as in
-	 * `https://host/path?token=secret: 404 Not Found`.  (A pure connection
-	 * failure prints only `failed: Connection refused.` and leaks nothing,
-	 * but the 404/403 case is enough.)  Redact at the source so every caller
-	 * of wGETVerbose gets a safe `error` whether or not it remembers to call
-	 * redactUrl itself. */
+	/* An HTTP-level failure prints the requested URL back into the message
+	 * with its query string and subscription token attached, as in
+	 * `Downloading 'https://host/path?token=secret'` + `HTTP error 404`.
+	 *  (A pure connection failure prints only `Failed to send request: …` and
+	 * leaks nothing, but the 404/403 case is enough.)  Redact at the source
+	 * so every caller of wGETVerbose gets a safe `error` whether or not it
+	 * remembers to call redactUrl itself. */
 	if (reason)
 		reason = redactReason(reason);
 
@@ -679,15 +737,15 @@ export function wGETVerbose(url, ua) {
 		if (length(reason) > 200)
 			reason = substr(reason, 0, 200) + '...';
 
-		return { content: null, error: `wget exited with status ${output.exitcode}: ${reason || 'no error output'}` };
+		return { content: null, error: `fetch exited with status ${output.exitcode}: ${reason || 'no error output'}` };
 	}
 
-	/* head() masks wget's status, so a failed fetch shows up here instead. */
+	/* head() masks the fetcher's status, so a failed fetch shows up here. */
 	if (!length(trim(output.stdout)) && reason) {
 		if (length(reason) > 200)
 			reason = substr(reason, 0, 200) + '...';
 
-		return { content: null, error: `wget failed: ${reason}` };
+		return { content: null, error: `fetch failed: ${reason}` };
 	}
 
 	return { content: trim(output.stdout), error: null };

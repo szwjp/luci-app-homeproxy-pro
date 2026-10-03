@@ -4,7 +4,7 @@
  * homeproxy module shim for subscription/fetcher unit tests.
  *
  * The real homeproxy.uc wraps wGETVerbose around `executeCommand(
- * /usr/bin/wget ...)`, which means a unit test that imports it
+ * uclient-fetch ...)`, which means a unit test that imports it
  * would shell out to the network. Tests stage this file as
  * `homeproxy` in their -L directory so the fetcher picks up the
  * shim's wGETVerbose instead.

@@ -13,6 +13,7 @@ LUCI_DEPENDS:= \
 	+kmod-nft-tproxy \
     +ip-full \
     +kmod-tun \
+	+uclient-fetch \
 	+ucode-mod-digest
 
 PKG_NAME:=luci-app-homeproxy
