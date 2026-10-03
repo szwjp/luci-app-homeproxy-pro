@@ -188,6 +188,148 @@ export function rulePathRootsText() {
 	return text;
 };
 
+/* --- rule-set format probing ---------------------------------------------
+ *
+ * A rule-set comes in exactly two formats, and sing-box needs to be told
+ * which one it is looking at:
+ *
+ *   source  a JSON document, {"version":3,"rules":[...]}
+ *   binary  a compiled .srs, which starts with the three ASCII bytes "SRS"
+ *
+ * The field is optional, because sing-box infers it from the file extension
+ * (.json -> source, .srs -> binary).  That inference is a guess about the
+ * NAME, and it is wrong in three ways that all end the same way - `sing-box
+ * check` rejects the whole configuration, so a reload is aborted and the user
+ * is left with "my change did not take":
+ *
+ *   content disagrees with the name   example.srs holding JSON  -> the file
+ *                                     is parsed as SRS and fails
+ *   the field says the wrong thing    format=binary on a .json    -> same
+ *   there is no name to infer from     a file with no extension   -> "missing
+ *                                     format", a different error for the
+ *                                     same underlying mistake
+ *
+ * So the correction is to look at the bytes.  The functions below are split
+ * in two on purpose: ruleSetFormatFromBytes() is a pure function of what it
+ * is handed, so the decision is unit-testable and auditable, and
+ * probeRuleSetFile() is the only part that touches the disk.  It is called
+ * from the CLI's resolve_env(), never from generator/ (guard 27), and its
+ * verdict reaches the generator as an ordinary context field.
+ *
+ * Nothing here ever *guesses*: an unreadable, empty or unclassifiable file
+ * yields no verdict at all, and the declared format is left exactly as the
+ * user wrote it.  sing-box stays the authority, and auto-correction can
+ * never become a second source of wrongness. */
+
+/* How many leading bytes ruleSetFormatFromBytes() needs.  Three for the magic,
+ * plus room to skip leading whitespace before the first JSON brace - a file
+ * written by a text editor or a Windows tool routinely starts with "\r\n".
+ * 512 is far more than the decision can use and far less than any real
+ * rule-set, so reading it is one short read, not a load. */
+export const RULESET_PROBE_BYTES = 512;
+
+/* ruleSetFormatFromBytes(head, size) -> 'binary' | 'source' | null.
+ *
+ * `head` is the leading bytes as a string (ucode fs.read hands them over as
+ * one), `size` the whole file's size.  Returns null when the bytes do not
+ * identify a format - an empty file, or content that is neither SRS nor JSON
+ * (a truncated download, an HTML error page served with a .srs name). */
+export function ruleSetFormatFromBytes(head, size) {
+	/* Empty is not "source" and not "binary": sing-box rejects a 0-byte
+	 * local rule-set with "invalid sing-box rule-set file" whatever format
+	 * is declared, so no verdict is the honest answer here and declaring one
+	 * would not help. */
+	if (!size || !head)
+		return null;
+
+	/* The SRS magic, compared byte by byte.
+	 *
+	 * isBinary() must NOT be reused here, and the reason is worth being exact
+	 * about, because the obvious one is wrong: isBinary() does not say "not
+	 * SRS", so it cannot be used as a negative test.  It answers a different
+	 * question - "does this look like text?" - and for rule-sets that answer
+	 * is only *correlated* with the format, never equal to it:
+	 *
+	 *   a full .srs happens to read as binary, because the version byte and
+	 *   the deflate stream carry control bytes.  That is a property of this
+	 *   week's encoder, not of the format, and it only holds because the
+	 *   probe happens to read enough of the file;
+	 *   a negative is ambiguous - binary-but-not-SRS, or text that is not
+	 *   JSON - and those need different answers.
+	 *
+	 * The magic is the format's own identity, costs three bytes, and gives
+	 * null for anything it does not recognise.  That last part is the point:
+	 * this probe declines to have an opinion rather than guessing. */
+	if (length(head) >= 3 &&
+	    ord(head, 0) == 0x53 && ord(head, 1) == 0x52 && ord(head, 2) == 0x53)
+		return 'binary';
+
+	/* Source is JSON, so the first byte that is not whitespace decides.
+	 * Both { (an object) and [ (an array) are accepted: sing-box's own
+	 * source form is an object, but an array is still "this is JSON" and
+	 * refusing to say so would only hand the decision back to a guess. */
+	const lead = trim(head);
+	if (length(lead) && (substr(lead, 0, 1) == '{' || substr(lead, 0, 1) == '['))
+		return 'source';
+
+	return null;
+};
+
+/* ruleSetFormatFromPath(path) -> 'binary' | 'source' | null.
+ *
+ * What sing-box's extension inference would decide for this name, expressed
+ * as the same two values.  null means "no extension sing-box can infer from",
+ * which is the case that produces "missing format" rather than a wrong parse -
+ * and the reason a content probe is worth doing at all.
+ *
+ * Deliberately NOT a general extension parser: only the two suffixes sing-box
+ * acts on are named, so this cannot drift into claiming it knows sing-box's
+ * rules.  A {tag} placeholder does not affect the answer, since the suffix
+ * comes after it. */
+export function ruleSetFormatFromPath(path) {
+	if (!path || type(path) !== 'string')
+		return null;
+
+	if (match(path, /\.json$/))
+		return 'source';
+
+	if (match(path, /\.srs$/))
+		return 'binary';
+
+	return null;
+};
+
+/* probeRuleSetFile(path) -> 'binary' | 'source' | null.
+ *
+ * The disk half.  Returns null - meaning "no opinion" - for a path outside the
+ * rule-set policy, a missing/empty/non-regular file, an unreadable one, and
+ * for content it cannot classify.  The policy check is not redundant with
+ * ruleset.uc's: this runs BEFORE the generator, on paths that have not been
+ * vetted yet, and it is a reader.
+ *
+ * lstat() rather than the two-argument access() - see the note in
+ * generate_client.uc's china_ip6_ready about this ucode build answering only
+ * in its one-argument form. */
+export function probeRuleSetFile(path) {
+	if (!validateRuleSetPath(path))
+		return null;
+
+	const st = lstat(path);
+	if (!st || st.type !== 'file' || st.size <= 0)
+		return null;
+
+	const f = open(path);
+	if (!f)
+		return null;
+
+	/* The `?? ''` is the same defensive read read_capped() uses: a short or
+	 * failed read must not become a null the caller has to reason about. */
+	const head = f.read(RULESET_PROBE_BYTES) ?? '';
+	f.close();
+
+	return ruleSetFormatFromBytes(head, st.size);
+};
+
 /* Read at most `limit` bytes from a file, or '' when it does not exist.
  * The cap is deliberate: a command's output is not trustworthy input. */
 function read_capped(path, limit) {

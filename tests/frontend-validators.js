@@ -267,5 +267,92 @@ check('dns_server still rejects an empty value', isError(validateDnsServer('')))
 check('dns_server still rejects a value that is neither a hostname nor an address',
 	isError(validateDnsServer('not a dns server')));
 
+/* --- subscription.js: the update_interval validator ---------------------- *
+ * sing-box parses update_interval as a Go duration.  A bare number used to
+ * reach it unchanged and come back as a measured hard failure - `time:
+ * missing unit in duration "3600"` - which rejects the WHOLE configuration,
+ * so the reload is aborted and the user sees only "my change did not take".
+ * The generator now normalises bare numbers (strToTime), and this validator
+ * is what stops the shapes Go cannot read at all, on the page.
+ *
+ * The callback is registered inline in render(), so the module is loaded
+ * against a form mock and the stored option is driven the way a widget calls
+ * it.  `1d` is the important rejection: it is what the placeholder used to
+ * show, it is the value a user is most likely to copy, and Go's duration
+ * units are ns/us/ms/s/m/h - there is no day.
+ */
+function updateIntervalValidate() {
+	const classes = [ 'Value', 'ListValue', 'Flag', 'DynamicList', 'MultiValue', 'TextValue',
+		'Button', 'TypedSection', 'NamedSection', 'GridSection', 'SectionValue' ];
+	const formMock = {};
+	for (const name of classes) {
+		formMock[name] = class {};
+		formMock[name].__name__ = name;
+	}
+
+	let captured = null;
+	const sectionMock = {
+		tab() {},
+		taboption(_tab, kind, name, title, description) { return this.option(kind, name, title, description); },
+		option(kind, name, title, description) {
+			const option = { kind, name, title, description, value() {}, depends() {} };
+			if (kind && kind.__name__ === 'SectionValue')
+				option.subsection = sectionMock;
+			if (name === 'update_interval')
+				captured = option;
+			return option;
+		}
+	};
+
+	const sub = loadLuciModule(
+		path.join(root, 'htdocs/luci-static/resources/view/homeproxy/client/subscription.js'),
+		{
+			baseclass: { extend: (o) => o },
+			form: formMock,
+			uci: { sections: () => {} },
+			homeproxy: {
+				renderSectionAdd: () => {},
+				loadModalTitle: () => {},
+				loadDefaultLabel: () => {},
+				validateUniqueValue: () => true,
+				validateRuleSetPath: () => true,
+				rule_path_default: '/etc/homeproxy/ruleset/example.srs'
+			}
+		},
+		/* The module binds four of its labels through L.bind() at render
+		 * time, so the runtime has to carry one.  A passthrough is enough -
+		 * nothing under test reads what those labels resolve to - but the
+		 * default runtime has no bind() at all, which is why this mock is
+		 * passed rather than left implicit. */
+		{ L: { bind: (fn) => fn } }
+	);
+
+	sub.render({ s: sectionMock });
+
+	const validator = captured && captured.validate;
+	if (typeof validator !== 'function')
+		throw new Error('subscription.js no longer registers an update_interval validator');
+
+	const ctx = { section: { formvalue: () => 'remote' } };
+	return (value) => validator.call(ctx, 'ruleset0', value);
+}
+
+const validateUpdateInterval = updateIntervalValidate();
+
+/* Accepted: a bare number (the generator appends "s") and Go's own duration
+ * grammar, including compounds like 1h30m. */
+for (const ok of [ '3600', '24h', '1h', '30m', '1h30m', '500ms', '1.5h', '90s' ])
+	check(`update_interval accepts '${ok}'`, validateUpdateInterval(ok) === true, String(validateUpdateInterval(ok)));
+
+/* Refused: a day/week/year unit, prose, a spaced value, and a negative. */
+for (const bad of [ '1d', '1w', '1y', 'daily', '24 h', '-1h', '1 h', 'h', '1x' ])
+	check(`update_interval rejects '${bad}'`, isError(validateUpdateInterval(bad)));
+
+/* Optional, not required: an empty value means "no update_interval", which
+ * sing-box reads as its own default.  Making the field required would refuse
+ * to save an existing, working remote rule-set. */
+check('update_interval accepts an empty value', validateUpdateInterval('') === true);
+check('update_interval ignores a missing section', validateUpdateInterval(null, '1d') === true);
+
 console.log(`frontend validators: ${checks} checks, ${failures} failures`);
 process.exit(failures ? 1 : 0);

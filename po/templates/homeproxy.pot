@@ -292,7 +292,7 @@ msgstr ""
 msgid "Based on google/gvisor."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:56
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:57
 msgid "Binary file"
 msgstr ""
 
@@ -507,7 +507,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:73
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:416
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:64
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:109
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:122
 msgid "Default"
 msgstr ""
 
@@ -561,7 +561,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:97
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:325
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:210
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:110
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:123
 msgid "Direct"
 msgstr ""
 
@@ -894,12 +894,13 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:155
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:158
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:112
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:82
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:85
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:90
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:93
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:136
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:139
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:95
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:98
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:103
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:106
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:149
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:152
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:188
 #: htdocs/luci-static/resources/view/homeproxy/node.js:484
 #: htdocs/luci-static/resources/view/homeproxy/node.js:741
 #: htdocs/luci-static/resources/view/homeproxy/node.js:744
@@ -924,12 +925,12 @@ msgstr ""
 msgid "Extra records"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:130
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:143
 msgid ""
 "Extra rule-set tags sharing these options. Requires {tag} in path/url (1.14)."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:129
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:142
 msgid "Extra tags"
 msgstr ""
 
@@ -1312,7 +1313,7 @@ msgstr ""
 msgid "Info"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:120
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:133
 msgid "Initial path"
 msgstr ""
 
@@ -1440,7 +1441,7 @@ msgstr ""
 msgid "Local address"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:121
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:134
 msgid ""
 "Local file with initial rule-set content; avoids blocking startup on first "
 "download (1.14). Must be under %s."
@@ -1844,7 +1845,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:329
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:91
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:319
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:103
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:116
 msgid "Outbound"
 msgstr ""
 
@@ -1852,7 +1853,7 @@ msgstr ""
 msgid "Outbound node"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:104
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:117
 msgid ""
 "Outbound used to download this rule-set (via sing-box 1.14 http_clients)."
 msgstr ""
@@ -1913,7 +1914,7 @@ msgstr ""
 #: htdocs/luci-static/resources/homeproxy.js:608
 #: htdocs/luci-static/resources/homeproxy.js:642
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:259
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:61
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:74
 msgid "Path"
 msgstr ""
 
@@ -2318,11 +2319,18 @@ msgstr ""
 msgid "Rule set IP CIDR as source IP"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:78
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:91
 msgid "Rule set URL"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:62
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:56
+msgid ""
+"Rule-set file format. Leave it empty and HomeProxy reads it from the file "
+"itself; a value that does not match the file is corrected and reported in "
+"the log."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:75
 msgid ""
 "Rule-set file in %s. Copy it there first: the generator refuses a rule-set "
 "whose file is missing."
@@ -2468,7 +2476,7 @@ msgstr ""
 msgid "Source MAC address"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:57
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:58
 msgid "Source file"
 msgstr ""
 
@@ -3030,12 +3038,12 @@ msgstr ""
 msgid "Update failed."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:145
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:158
 msgid "Update interval"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:146
-msgid "Update interval of rule set."
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:159
+msgid "Update interval of rule set, e.g. 24h or 3600 (seconds)."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:789
@@ -3236,7 +3244,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/dns.js:154
 #: htdocs/luci-static/resources/view/homeproxy/client/dns.js:196
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:141
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:82
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:95
 #: htdocs/luci-static/resources/view/homeproxy/node.js:484
 msgid "non-empty value"
 msgstr ""
@@ -3318,6 +3326,10 @@ msgstr ""
 msgid "unknown error"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:188
+msgid "update interval like 24h, 1h30m or 3600"
+msgstr ""
+
 #: htdocs/luci-static/resources/view/homeproxy/node.js:94
 #: htdocs/luci-static/resources/view/homeproxy/node.js:202
 #: htdocs/luci-static/resources/view/homeproxy/node.js:531
@@ -3356,8 +3368,8 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:155
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:158
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:90
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:93
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:103
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:106
 #: htdocs/luci-static/resources/view/homeproxy/node.js:741
 #: htdocs/luci-static/resources/view/homeproxy/node.js:744
 msgid "valid URL"
@@ -3404,11 +3416,11 @@ msgstr ""
 msgid "wrong-timestamp"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:85
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:136
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:98
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:149
 msgid "{tag} in URL when extra tags are used"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:139
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:152
 msgid "{tag} in initial path when extra tags are used"
 msgstr ""

@@ -30,7 +30,7 @@ import { lstat, mkdtemp, readfile, writefile } from 'fs';
 import { Loader } from './config/loader.uc';
 import { generate } from './generator/client.uc';
 import { rule_set_tags } from './generator/common.uc';
-import { removeBlankAttrs, isEmpty, HP_DIR, RUN_DIR, shellQuote, UCICONFIG_DIR } from './homeproxy.uc';
+import { removeBlankAttrs, isEmpty, probeRuleSetFile, validateRuleSetPath, HP_DIR, RUN_DIR, shellQuote, UCICONFIG_DIR } from './homeproxy.uc';
 
 /* Resolve the GenerationContext inputs. This is the only impure step on the
  * client generation path, and it is deliberately here rather than under
@@ -118,34 +118,119 @@ function resolve_env(dm) {
 		 * needs; whether the jailed sing-box user can read the file is the
 		 * runtime's business (hp_prepare_runtime_files hands the archive over
 		 * on every start). */
-		ruleset_local_ready: {}
+		ruleset_local_ready: {},
+		/* What each rule-set's own file actually IS, keyed by UCI section
+		 * name: { '<section>': 'binary' | 'source' }.
+		 *
+		 * A verdict about the bytes, so the generator can stop trusting a
+		 * field that describes the file's NAME: sing-box infers `format`
+		 * from the extension and is wrong in three ways that all end the
+		 * same way (`sing-box check` rejects the configuration, the reload
+		 * is aborted, the user sees "my change did not take") - content
+		 * disagreeing with the name, the field naming the wrong format, and
+		 * no extension to infer from at all.  See ruleSetFormatFromBytes()
+		 * in homeproxy.uc for the whole argument.
+		 *
+		 * No entry means no opinion, and that is the normal case for a
+		 * remote rule-set with no initial_path: its content comes from a URL
+		 * and generation must not touch the network.  A missing entry is
+		 * therefore never read as "source" or "binary" - it is read as
+		 * "leave the declared format alone", which is also what sing-box
+		 * does with a rule-set nobody told anything about. */
+		ruleset_formats: {}
 	};
 
 	if (routing_mode === 'custom') {
 		for (let cfg in (dm.routing.rulesets || [])) {
-			if (!cfg.enabled || cfg.type !== 'local' || isEmpty(cfg.path))
+			if (!cfg.enabled)
 				continue;
 
-			/* One path per tag; a single-tag rule-set yields exactly one, so
-			 * this is the plain case and the loop is the only complication. */
-			const paths = [];
-			if (match(cfg.path, /\{tag\}/))
-				for (let tag in rule_set_tags(cfg))
-					push(paths, replace(cfg.path, '{tag}', tag));
-			else
-				push(paths, cfg.path);
+			/* The file sing-box opens at startup: a local rule-set's `path`,
+			 * and a remote one's `initial_path` when it has one.  Both are
+			 * subject to the same questions (is it there, what is it), which
+			 * is why one pass answers both.
+			 *
+			 * A remote rule-set with no initial_path has nothing to look at:
+			 * its content is whatever the URL serves, and fetching that
+			 * during generation is exactly what generation must not do. */
+			const source = (cfg.type === 'local') ? cfg.path
+				: ((cfg.type === 'remote') ? cfg.initial_path : null);
+			if (isEmpty(source))
+				continue;
 
-			let usable = true;
+			/* One path per tag.  A single-tag rule-set yields exactly one, so
+			 * this is the plain case and the loop is the only complication -
+			 * and it has to be here, because sing-box substitutes {tag} and
+			 * opens EVERY resulting file.  rule_set_tags() is the shared tag
+			 * list (see common.uc): a second copy would be free to drift,
+			 * and the drift would be silent - a pre-check that stats files
+			 * the running configuration never names. */
+			const paths = [];
+			if (match(source, /\{tag\}/))
+				for (let tag in rule_set_tags(cfg))
+					push(paths, replace(source, '{tag}', tag));
+			else
+				push(paths, source);
+
+			/* Both answers below are about paths the sing-box jail opens as
+			 * the sing-box user, so an out-of-policy path is not read at all
+			 * here.  ruleset.uc refuses it a moment later with the message
+			 * the user can act on; producing no opinion about a file this
+			 * process has no business opening is the whole point of the
+			 * check. */
+			let in_policy = true;
+			for (let p in paths)
+				if (!validateRuleSetPath(p)) {
+					in_policy = false;
+					break;
+				}
+			if (!in_policy)
+				continue;
+
+			/* Presence: every tag's file, and "present" means a non-empty
+			 * regular file - all three states make `sing-box check` fail,
+			 * the first two with a filesystem error and the third with
+			 * "invalid sing-box rule-set file".  Only a local rule-set
+			 * consults this; a remote one is allowed to have no
+			 * initial_path, which is the normal case. */
+			let all_present = true;
 			for (let p in paths) {
 				const st = lstat(p);
 				if (!st || st.type !== 'file' || st.size <= 0) {
-					usable = false;
+					all_present = false;
 					break;
 				}
 			}
-
-			if (usable)
+			if (cfg.type === 'local' && all_present)
 				env.ruleset_local_ready[cfg.name] = true;
+
+			/* Content: one verdict, and only when every file agrees.
+			 *
+			 * A disagreement between tags, or a file the probe cannot
+			 * classify (a truncated download, an HTML error page saved
+			 * under a .srs name), yields no verdict at all rather than the
+			 * first answer that came back.  Correcting on ambiguous
+			 * evidence is how an auto-correction turns into a second source
+			 * of wrongness, and sing-box's own error is a better one than a
+			 * guess dressed up as a fix. */
+			let verdict = null, unanimous = true;
+			for (let p in paths) {
+				const seen = probeRuleSetFile(p);
+
+				if (!seen) {
+					unanimous = false;
+					break;
+				}
+
+				if (!verdict)
+					verdict = seen;
+				else if (verdict !== seen) {
+					unanimous = false;
+					break;
+				}
+			}
+			if (unanimous && verdict)
+				env.ruleset_formats[cfg.name] = verdict;
 		}
 	}
 

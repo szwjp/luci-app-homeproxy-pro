@@ -12,7 +12,8 @@
 'use strict';
 
 import { lsdir } from 'fs';
-import { executeCommand, isValidCIDR, isValidPEM, redactReason, redactUrl, shellQuote, wGETVerbose } from 'homeproxy';
+import { executeCommand, isValidCIDR, isValidPEM, redactReason, redactUrl, ruleSetFormatFromBytes,
+	ruleSetFormatFromPath, RULESET_PROBE_BYTES, shellQuote, wGETVerbose } from 'homeproxy';
 
 let failures = 0,
     checks = 0;
@@ -174,6 +175,62 @@ expect('cidr6.prefix-overflow', isValidCIDR('::1/129', 6),             false);
 expect('cidr6.prefix-injection',isValidCIDR('::1/64;}', 6),            false);
 expect('cidr6.two-colons',      isValidCIDR('1::2::3', 6),             false);
 expect('cidr6.empty',           isValidCIDR('', 6),                    false);
+
+/* --- the rule-set format probe -------------------------------------------
+ *
+ * Two pure functions, so the whole decision is testable without a file and
+ * without sing-box: ruleSetFormatFromBytes() looks at bytes, and
+ * ruleSetFormatFromPath() says what sing-box's extension inference would
+ * have decided for a name.  The pairing is the point - the generator compares
+ * the two (generator/ruleset.uc's resolveFormat) and only speaks when they
+ * disagree - so a regression in either half has to show up here.
+ *
+ * "SRS" is 0x53 0x52 0x53.  It is written as a literal because that IS the
+ * byte sequence, and the test is about the function answering correctly for
+ * the format's own identity, not about how the constant was spelled.
+ *
+ * Returns are 'binary' | 'source' | null, and the null cases carry most of
+ * the weight: the probe must decline to have an opinion rather than guess,
+ * because a guess here becomes a `format` declaration that makes sing-box
+ * reject the configuration at startup. */
+expect('probe: SRS magic is binary',       ruleSetFormatFromBytes('SRS' + 'x', 4), 'binary');
+expect('probe: a three-byte SRS is binary', ruleSetFormatFromBytes('SRS', 3), 'binary');
+expect('probe: a JSON object is source',   ruleSetFormatFromBytes('{"version":3,"rules":[]}', 21), 'source');
+/* Leading whitespace is the normal shape of a file written by an editor or a
+ * Windows tool, and the decision must not depend on byte 0 being '{'. */
+expect('probe: leading whitespace is still source',
+	ruleSetFormatFromBytes('\n\t  {"version":3}', 14), 'source');
+expect('probe: a JSON array is source',    ruleSetFormatFromBytes('[{"a":1}]', 8), 'source');
+
+/* Every null case is a "do not touch the user's field" case. */
+expect('probe: an empty file is no verdict',  ruleSetFormatFromBytes('', 0), null);
+expect('probe: a failed read is no verdict',   ruleSetFormatFromBytes('', 10), null);
+expect('probe: two bytes are not the magic',   ruleSetFormatFromBytes('SR', 2), null);
+expect('probe: a near-miss magic is no verdict', ruleSetFormatFromBytes('SRX', 3), null);
+/* The one that matters most: prose is text and is still not a source
+ * rule-set.  If "looks like text" were the test, this would answer 'source'
+ * and the generated config would name a JSON file that does not exist. */
+expect('probe: printable text is no verdict',  ruleSetFormatFromBytes('hello world', 11), null);
+/* What a failed download actually leaves behind under a .srs name. */
+expect('probe: an HTML error page is no verdict',
+	ruleSetFormatFromBytes('<!DOCTYPE html><html></html>', 27), null);
+
+expect('probe: the read window is a sane size',
+	RULESET_PROBE_BYTES >= 8 && RULESET_PROBE_BYTES <= 4096, true);
+
+/* What sing-box's extension inference would have decided, expressed in the
+ * same two values.  null is the case that produces "missing format" rather
+ * than a wrong parse, and it is the reason a content probe is worth having. */
+expect('inference: .srs is binary',   ruleSetFormatFromPath('/etc/homeproxy/ruleset/example.srs'), 'binary');
+expect('inference: .json is source',  ruleSetFormatFromPath('/etc/homeproxy/ruleset/example.json'), 'source');
+expect('inference: no extension has no verdict', ruleSetFormatFromPath('/etc/homeproxy/ruleset/example'), null);
+/* The suffix is what counts, not the first dot in the name. */
+expect('inference: .srs.txt is no verdict', ruleSetFormatFromPath('/etc/homeproxy/ruleset/x.srs.txt'), null);
+expect('inference: the suffix is case-sensitive', ruleSetFormatFromPath('/etc/homeproxy/ruleset/x.SRS'), null);
+/* A {tag} placeholder comes before the suffix, so it must not hide it. */
+expect('inference: a {tag} path keeps its suffix', ruleSetFormatFromPath('/etc/homeproxy/ruleset/{tag}.srs'), 'binary');
+expect('inference: null has no verdict',  ruleSetFormatFromPath(null), null);
+expect('inference: an empty path has no verdict', ruleSetFormatFromPath(''), null);
 
 /* descriptors must not leak across calls */
 const before = fd_count();

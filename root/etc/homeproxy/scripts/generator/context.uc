@@ -154,6 +154,17 @@ export function build_context(dm, env) {
 		 * the field (the server path, a future caller) must not turn "no file"
 		 * into "assume the file is there". */
 		ruleset_local_ready: (env?.ruleset_local_ready || {}),
+		/* What each rule-set's file actually is, keyed by UCI section name.
+		 *
+		 * Reaches the generator as an ordinary field for the same reason
+		 * china_ip6_ready does - and with the same pessimistic default, which
+		 * matters more here.  For china_ip6_ready a missing field meant "no
+		 * file"; here it means "no opinion about the content", and the
+		 * generator must read that as "leave the declared format alone".
+		 * Defaulting it to, say, 'source' would have every remote rule-set
+		 * with no initial_path silently declared as source JSON, and a binary
+		 * .srs fetched from a URL would then fail to parse at startup. */
+		ruleset_formats: (env?.ruleset_formats || {}),
 		self_mark, ntp_server, dns_port, mixed_port,
 		redirect_port, tproxy_port,
 		tun_name, tun_addr4, tun_addr6, tun_mtu,

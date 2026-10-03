@@ -3146,7 +3146,7 @@
 								"kind": "ListValue",
 								"name": "format",
 								"title": "Format",
-								"description": null,
+								"description": "Rule-set file format. Leave it empty and HomeProxy reads it from the file itself; a value that does not match the file is corrected and reported in the log.",
 								"depends": [],
 								"values": [
 									[
@@ -3160,8 +3160,7 @@
 								],
 								"subsection": null,
 								"props": {
-									"default": "binary",
-									"rmempty": false
+									"rmempty": true
 								}
 							},
 							{
@@ -3273,7 +3272,7 @@
 								"kind": "Value",
 								"name": "update_interval",
 								"title": "Update interval",
-								"description": "Update interval of rule set.",
+								"description": "Update interval of rule set, e.g. 24h or 3600 (seconds).",
 								"depends": [
 									[
 										"type",
@@ -3283,7 +3282,8 @@
 								"values": [],
 								"subsection": null,
 								"props": {
-									"placeholder": "1d"
+									"placeholder": "24h",
+									"validate": "fn(242:e40abf36902a)"
 								}
 							}
 						],

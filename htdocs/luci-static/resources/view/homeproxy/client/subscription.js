@@ -52,11 +52,24 @@ function render(ctx) {
 	so.default = 'remote';
 	so.rmempty = false;
 
-	so = ss.option(form.ListValue, 'format', _('Format'));
+	so = ss.option(form.ListValue, 'format', _('Format'),
+		_('Rule-set file format. Leave it empty and HomeProxy reads it from the file itself; a value that does not match the file is corrected and reported in the log.'));
 	so.value('binary', _('Binary file'));
 	so.value('source', _('Source file'));
-	so.default = 'binary';
-	so.rmempty = false;
+	/* rmempty, and no default.
+	 *
+	 * A default of 'binary' plus rmempty=false meant EVERY local rule-set
+	 * carried an explicit format - and an explicit value beats sing-box's
+	 * extension inference, so "add a local rule-set, pick my example.json,
+	 * forget to change Format" produced a configuration that parsed JSON as
+	 * a compiled .srs and was rejected at apply time.
+	 *
+	 * Leaving the field empty is now the recommended state rather than an
+	 * accident: the generator reads the first bytes of the file and declares
+	 * the format itself (generator/ruleset.uc's resolveFormat), correcting a
+	 * wrong value and saying so in the log.  Writing a default here would
+	 * put a value back on every rule-set for that code to undo. */
+	so.rmempty = true;
 
 	so = ss.option(form.Value, 'path', _('Path'),
 		_('Rule-set file in %s. Copy it there first: the generator refuses a rule-set whose file is missing.').format('/etc/homeproxy/ruleset/'));
@@ -143,8 +156,37 @@ function render(ctx) {
 	so.modalonly = true;
 
 	so = ss.option(form.Value, 'update_interval', _('Update interval'),
-		_('Update interval of rule set.'));
-	so.placeholder = '1d';
+		_('Update interval of rule set, e.g. 24h or 3600 (seconds).'));
+	/* 24h, not 1d.
+	 *
+	 * sing-box parses update_interval as a Go duration, and Go's units are
+	 * ns/us/ms/s/m/h - there is no day.  The placeholder used to read "1d",
+	 * which is the one value a user is most likely to copy verbatim into a
+	 * field that then rejects the whole configuration.  24h is the same
+	 * interval, is a unit Go reads, and is exactly what this generator emits
+	 * for its own built-in rule-sets (generator/route.uc).
+	 *
+	 * A bare number is accepted because the generator normalises it: the
+	 * value is passed through strToTime(), which appends "s" to anything
+	 * that does not already end in a unit - that is the fix for the measured
+	 * `time: missing unit in duration "3600"` failure. */
+	so.placeholder = '24h';
+	so.validate = function(section_id, value) {
+		/* Empty means "no update_interval", which sing-box reads as its own
+		 * default - the field is optional, so it must not be made required. */
+		if (!section_id || !value)
+			return true;
+
+		/* What Go's time.ParseDuration accepts: a sequence of
+		 * number+unit groups (so 1h30m is fine), or a bare number, which
+		 * strToTime() will turn into seconds.  Everything else - "1d", "1w",
+		 * "daily", "24 h" - is refused here, on the page, instead of becoming
+		 * a rejected configuration the user only learns about from a log. */
+		if (/^\d+$/.test(value) || /^(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+$/.test(value))
+			return true;
+
+		return _('Expecting: %s').format(_('update interval like 24h, 1h30m or 3600'));
+	};
 	so.depends('type', 'remote');
 	/* Rule set settings end */
 }

@@ -90,6 +90,24 @@ run_case() {
 			FAILED=1
 			return
 		fi
+
+		# Two more files in the archive, for the format-probe cases.  Both
+		# hold a VALID version-3 source rule-set; they differ only in what
+		# they are called, which is the whole point:
+		#
+		#   source.json      the name agrees with the content - the baseline
+		#                    a correct configuration already looks like
+		#   mislabelled.srs  source content under a .srs name, i.e. exactly
+		#                    the state sing-box's extension inference gets
+		#                    wrong ("invalid sing-box rule-set file")
+		#
+		# They cannot be the same file: the cases need the *name* to be the
+		# variable while the content stays valid, and a rule-set that failed
+		# `sing-box check` for its own reasons would make every assertion
+		# about the correction meaningless.
+		printf '%s' '{"version":3,"rules":[{"domain_keyword":["example.com"]}]}' > "$dir/ruleset/source.json"
+		cp "$dir/ruleset/source.json" "$dir/ruleset/mislabelled.srs"
+
 		sed "s#__RULESET_DIR__#$dir/ruleset#" "$fixture" > "$dir/config/homeproxy"
 	else
 		cp "$fixture" "$dir/config/homeproxy"
@@ -1219,6 +1237,113 @@ run_case_type_error local-ruleset-missing-file "which is missing, not a regular 
 run_case_type_error remote-ruleset-bad-initial-path "initial_path .* is outside the allowed rule-set roots" \
 	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
 	"s%option type 'local'%option type 'remote'%;s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option url 'https://example.invalid/x.srs'\n    option initial_path '/etc/passwd'%"
+
+# 7) Batch 1: the format probe and the duration normalisation.
+#
+#    The `format` field describes a file's NAME, and sing-box infers it from
+#    the extension.  That guess is wrong in three ways, and each of them ends
+#    the same way - `sing-box check` rejects the configuration, the reload is
+#    aborted and the user sees only "my change did not take":
+#
+#      a) an explicit format naming the wrong one
+#      b) no explicit format, but the content disagrees with the extension
+#      c) no explicit format and no extension to infer from ("missing format")
+#
+#    generate_client.uc reads the first bytes of the file and hands the
+#    verdict over as ruleset_formats; ruleset.uc's resolveFormat() decides
+#    what to emit.  The archive holds a valid version-3 source rule-set under
+#    two names (see run_case) so these cases vary the NAME and the DECLARED
+#    value while the content stays valid.
+#
+#    Each case asserts on the GENERATED JSON rather than on the log: the
+#    generated `format` is the thing sing-box is given, and a log line that
+#    appears while the JSON is still wrong would be a false pass.
+
+# 7a) (a) declared binary, file is source JSON.
+rs_wrong_decl="$WORK/ruleset-format-wrong-declared/run/sing-box-c.json"
+run_case ruleset-format-wrong-declared "$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%^[[:space:]]*option path '\(.*\)/ruleset/test.srs'%    option path '\1/ruleset/source.json'%"
+if [ ! -f "$rs_wrong_decl" ]; then
+	echo "FAIL: ruleset-format-wrong-declared: no config was generated"
+	FAILED=1
+elif ! grep -q '"tag": "cfg-rs_local-rule"' "$rs_wrong_decl"; then
+	echo "FAIL: ruleset-format-wrong-declared: the rule-set is missing from the config"
+	FAILED=1
+# The entry is multi-line, so read the block rather than grepping the whole
+# file: "format": "binary" appears on the built-in geoip-cn entry too.
+elif ! awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_wrong_decl" | grep -q '"format": "source"'; then
+	echo "FAIL: ruleset-format-wrong-declared: a source-JSON file declared binary was not corrected:"
+	awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_wrong_decl" | sed 's/^/      /'
+	FAILED=1
+else
+	echo "PASS: ruleset-format-wrong-declared: declared binary, file is source -> corrected to source"
+fi
+
+# 7b) (b) no declared format, content is source JSON under a .srs name.  The
+#     extension inference is what lies here, so the case also has to prove the
+#     correction is ANNOUNCED - otherwise the user cannot tell why their
+#     empty field turned into an explicit one.
+rs_mislabelled="$WORK/ruleset-format-mislabelled/run/sing-box-c.json"
+run_case ruleset-format-mislabelled "$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"/^[[:space:]]*option format 'binary'\$/d;s%^[[:space:]]*option path '\(.*\)/ruleset/test.srs'%    option path '\1/ruleset/mislabelled.srs'%"
+if [ ! -f "$rs_mislabelled" ]; then
+	echo "FAIL: ruleset-format-mislabelled: no config was generated"
+	FAILED=1
+elif ! awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_mislabelled" | grep -q '"format": "source"'; then
+	echo "FAIL: ruleset-format-mislabelled: a source-JSON file named .srs was not declared as source:"
+	awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_mislabelled" | sed 's/^/      /'
+	FAILED=1
+else
+	echo "PASS: ruleset-format-mislabelled: source JSON under a .srs name -> declared source"
+fi
+
+# 7c) The case that must NOT change: a .srs holding a real .srs, with no
+#     declared format.  sing-box's inference is already right, so emitting an
+#     explicit value would alter the generated bytes of every working
+#     rule-set for no behavioural gain.  This is the assertion that keeps the
+#     correction from becoming a rewrite.
+rs_untouched="$WORK/ruleset-format-untouched/run/sing-box-c.json"
+run_case ruleset-format-untouched "$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"/^[[:space:]]*option format 'binary'\$/d"
+if [ ! -f "$rs_untouched" ]; then
+	echo "FAIL: ruleset-format-untouched: no config was generated"
+	FAILED=1
+elif awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_untouched" | grep -q '"format":'; then
+	echo "FAIL: ruleset-format-untouched: a correct rule-set gained an explicit format;"
+	echo "      the probe must only speak when it disagrees with what sing-box would do"
+	awk '/"tag": "cfg-rs_local-rule"/,/^		},$/' "$rs_untouched" | sed 's/^/      /'
+	FAILED=1
+else
+	echo "PASS: ruleset-format-untouched: an already-correct rule-set is left exactly as it was"
+fi
+
+# 7d) update_interval normalisation.  sing-box parses it as a Go duration, and
+#     `update_interval: "3600"` is a measured hard failure on 1.14.2 ("time:
+#     missing unit in duration \"3600\"") that rejects the whole configuration.
+#     strToTime() appends the unit; "24h" must pass through untouched, because
+#     a value that already carries a unit is the normal case and must not be
+#     rewritten into something else.
+rs_interval="$WORK/ruleset-update-interval/run/sing-box-c.json"
+run_case ruleset-update-interval "$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%^[[:space:]]*option path '.*/ruleset/test.srs'%&\n\nconfig ruleset 'rs_remote'\n\toption enabled '1'\n\toption label 'remote-rs'\n\toption type 'remote'\n\toption format 'binary'\n\toption url 'https://example.invalid/x.srs'\n\toption update_interval '3600'%"
+
+run_case ruleset-update-interval-unit "$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
+	"s%^[[:space:]]*option path '.*/ruleset/test.srs'%&\n\nconfig ruleset 'rs_remote'\n\toption enabled '1'\n\toption label 'remote-rs'\n\toption type 'remote'\n\toption format 'binary'\n\toption url 'https://example.invalid/x.srs'\n\toption update_interval '24h'%"
+
+for pair in "ruleset-update-interval:3600s:3600" "ruleset-update-interval-unit:24h:24h"; do
+	name="${pair%%:*}"; rest="${pair#*:}"; want="${rest%%:*}"; was="${rest#*:}"
+	f="$WORK/$name/run/sing-box-c.json"
+	if [ ! -f "$f" ]; then
+		echo "FAIL: $name: no config was generated"
+		FAILED=1
+	elif ! grep -q "\"update_interval\": \"$want\"" "$f"; then
+		echo "FAIL: $name: update_interval '$was' should be emitted as '$want':"
+		grep -n '"update_interval"' "$f" | sed 's/^/      /'
+		FAILED=1
+	else
+		echo "PASS: $name: update_interval '$was' is emitted as '$want'"
+	fi
+done
 
 # 6) P3 #8 (extra_tags die() on missing {tag}): deferred to
 #    a dedicated 'testbed-dialect' sprint. The multi-line sed to

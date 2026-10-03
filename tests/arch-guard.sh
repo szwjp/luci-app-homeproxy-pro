@@ -2503,6 +2503,119 @@ else
 fi
 
 echo
+echo "== guard 51: the format probe stays a probe, and the form stops fighting it =="
+
+# issue #7 batch 1 turned a comment into a mechanism: generation reads the first
+# bytes of each rule-set file and declares `format` from that, and a bare
+# `update_interval` is normalised before sing-box parses it as a Go duration.
+#
+# Every part of that is a decision that can be undone by a well-meaning edit,
+# and each reversion reproduces a failure that is invisible until a router
+# refuses to start:
+#
+#   (a) the disk half of the probe moving under generator/ - the purity
+#       invariant guard 27 protects, but at a different boundary than the one
+#       it watches (guard 27 bans the fs/ubus IMPORT; this bans the CALL, so
+#       a generator could reach the disk through a helper in homeproxy.uc and
+#       still pass guard 27)
+#   (b) the probe reimplemented on isBinary() - which answers "is this text?",
+#       a question correlated with the format rather than equal to it (see the
+#       comment on ruleSetFormatFromBytes for why that correlation is luck)
+#   (c) update_interval passing through raw again, which is the measured
+#       `time: missing unit in duration "3600"` hard failure
+#   (d) the form's `format` option growing a default back, which is what made
+#       "add a local rule-set, pick my .json, forget Format" produce a
+#       configuration that parsed JSON as a compiled .srs
+#   (e) the update_interval placeholder showing a unit Go cannot read, which
+#       is how `1d` got there in the first place
+PROBE="$(python3 - "$SCRIPTS" "$VIEWS" <<'PY'
+import pathlib, re, sys
+
+scripts, views = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+ruleset_uc = (scripts / 'generator' / 'ruleset.uc').read_text(encoding='utf-8')
+homeproxy_uc = (scripts / 'homeproxy.uc').read_text(encoding='utf-8')
+client_uc = (scripts / 'generate_client.uc').read_text(encoding='utf-8')
+sub_js = (views / 'view' / 'homeproxy' / 'client' / 'subscription.js').read_text(encoding='utf-8')
+problems = []
+
+# (a) Only the process boundary may touch the disk for a probe.
+for f in sorted((scripts / 'generator').glob('*.uc')):
+    body = f.read_text(encoding='utf-8')
+    if re.search(r'\bprobeRuleSetFile\s*\(', re.sub(r'/\*[\s\S]*?\*/', '', body)):
+        problems.append('%s calls probeRuleSetFile(); only the CLI may read a rule-set file'
+                        % f.name)
+if not re.search(r'\bprobeRuleSetFile\s*\(', re.sub(r'/\*[\s\S]*?\*/', '', client_uc)):
+    problems.append('generate_client.uc no longer probes the rule-set files, so ruleset_formats '
+                    'is never populated and the correction in ruleset.uc can never fire')
+
+# (b) The magic is compared byte by byte, and isBinary() is not the test.
+m = re.search(r'export function ruleSetFormatFromBytes\([^)]*\)\s*\{(.*?)\n\};', homeproxy_uc, re.S)
+if not m:
+    problems.append('homeproxy.uc: ruleSetFormatFromBytes() is gone; nothing decides the format')
+else:
+    body = re.sub(r'/\*[\s\S]*?\*/', '', m.group(1))
+    for byte in ('0x53', '0x52'):
+        if byte not in body:
+            problems.append('ruleSetFormatFromBytes() no longer compares the SRS magic byte %s' % byte)
+    if re.search(r'\bisBinary\s*\(', body):
+        problems.append('ruleSetFormatFromBytes() calls isBinary(); that answers "is this text?", '
+                        'which is correlated with the rule-set format rather than equal to it')
+
+# (c) update_interval is normalised, not forwarded.
+if 'strToTime(cfg.update_interval)' not in ruleset_uc:
+    problems.append("ruleset.uc no longer runs update_interval through strToTime(); a bare number "
+                    "goes to sing-box as `missing unit in duration`")
+if re.search(r'update_interval:\s*cfg\.update_interval\b', ruleset_uc):
+    problems.append('ruleset.uc forwards update_interval raw again')
+
+# (d)/(e) The rule-set form must not re-introduce the two UI defects.
+def option_block(src, name):
+    m = re.search(r"option\(form\.\w+,\s*'%s'.*?(?=\n\tso = |\n\t/\* Rule set settings end)" % name,
+                  src, re.S)
+    return m.group(0) if m else None
+
+fmt = option_block(sub_js, 'format')
+if fmt is None:
+    problems.append('subscription.js: the format option is gone')
+else:
+    if re.search(r'\bso\.default\s*=', fmt):
+        problems.append("the rule-set form gives `format` a default again; an explicit value beats "
+                        "sing-box's extension inference, so every local rule-set ships a format that "
+                        "may contradict its own file")
+    if not re.search(r'\bso\.rmempty\s*=\s*true', fmt):
+        problems.append("the rule-set form's `format` is not rmempty; nothing can be left unset, so "
+                        "the generator's read-the-bytes correction is the only thing standing between "
+                        "a user and a rejected configuration")
+
+iv = option_block(sub_js, 'update_interval')
+if iv is None:
+    problems.append('subscription.js: the update_interval option is gone')
+else:
+    if not re.search(r'\bso\.validate\s*=', iv):
+        problems.append('update_interval has no validator, so a unit Go cannot read reaches sing-box '
+                        'and rejects the whole configuration at apply time')
+    m = re.search(r"so\.placeholder\s*=\s*'([^']*)'", iv)
+    if not m:
+        problems.append('update_interval has no placeholder')
+    elif not re.fullmatch(r'(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))+', m.group(1)):
+        problems.append("the update_interval placeholder %r is not a Go duration; Go's units are "
+                        "ns/us/ms/s/m/h, and a placeholder is the value users copy verbatim"
+                        % m.group(1))
+
+print('\n'.join(problems))
+PY
+)" || PROBE="__SCAN_FAILED__"
+if [ "$PROBE" = "__SCAN_FAILED__" ]; then
+	fail "the format-probe scan could not run - fix the guard before trusting a pass"
+elif [ -z "$PROBE" ]; then
+	pass "the format probe reads only at the process boundary, decides on the magic,"
+	pass "  normalises update_interval, and the form neither defaults nor misleads"
+else
+	fail "the format probe / duration normalisation has been undone:"
+	printf '      %s\n' "$PROBE"
+fi
+
+echo
 printf '%s checks, %s failures\n' "$checks" "$([ "$FAILED" = 0 ] && echo 0 || echo 'nonzero')"
 if [ "$FAILED" != 0 ]; then
 	echo "ARCHITECTURE GUARD FAILED"
