@@ -1218,7 +1218,7 @@ run_case_type_error local-ruleset-missing-file "which is missing, not a regular 
 #     `sing-box check` with a field the remote type does not have.
 run_case_type_error remote-ruleset-bad-initial-path "initial_path .* is outside the allowed rule-set roots" \
 	"$ROOT/tests/fixtures/generators/custom.uci" generate_client.uc sing-box-c.json \
-	"s%option type 'local'%option type 'remote';s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option url 'https://example.invalid/x.srs'\n    option initial_path '/etc/passwd'%"
+	"s%option type 'local'%option type 'remote'%;s%^[[:space:]]*option path '.*/ruleset/test.srs'%    option url 'https://example.invalid/x.srs'\n    option initial_path '/etc/passwd'%"
 
 # 6) P3 #8 (extra_tags die() on missing {tag}): deferred to
 #    a dedicated 'testbed-dialect' sprint. The multi-line sed to
