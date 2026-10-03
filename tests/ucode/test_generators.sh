@@ -1412,16 +1412,25 @@ if [ ! -f "$ss_json" ]; then
 	echo "FAIL: safe-start-on: no config was generated"
 	FAILED=1
 else
+	# grep -F on the fully-constructed path, not an awk range around the entry.
+	# The range form over-captured: it ran past the entry's closing brace into
+	# the next one and then reported success on whatever it found, so a
+	# rule-set with NO initial_path would have passed whenever the next entry
+	# had one.  Asserting the exact string also pins that the path is inside
+	# this run's archive, which is the property that makes it readable by the
+	# jailed client and admitted by the path whitelist.
 	for tag in geoip-cn geosite-cn; do
-		if ! awk -v t="\"tag\": \"$tag\"" '$0 ~ t,/^		},$/' "$ss_json" | grep -q '"initial_path"'; then
-			echo "FAIL: safe-start-on: the built-in '$tag' has no initial_path:"
-			awk -v t="\"tag\": \"$tag\"" '$0 ~ t,/^		},$/' "$ss_json" | sed 's/^/      /'
+		want="\"initial_path\": \"$ss_initial/$tag.srs\""
+		if ! grep -qF "$want" "$ss_json"; then
+			echo "FAIL: safe-start-on: the built-in '$tag' does not carry"
+			echo "      $want"
+			grep -n 'initial_path' "$ss_json" | sed 's/^/      /'
 			FAILED=1
 		elif [ ! -s "$ss_initial/$tag.srs" ]; then
 			echo "FAIL: safe-start-on: '$tag' points at an initial file that was not written"
 			FAILED=1
 		else
-			echo "PASS: safe-start-on: built-in '$tag' -> initial_path, and the file is there"
+			echo "PASS: safe-start-on: built-in '$tag' -> initial_path inside the archive, file present"
 		fi
 	done
 
@@ -1465,16 +1474,15 @@ else
 	# Single tag: a concrete path, and the file it names has to be there.  A
 	# pointer at a file that does not exist is not a degraded feature, it is no
 	# feature - sing-box ignores it and blocks startup exactly as before.
-	sr_path="$(awk '/"tag": "cfg-rs_remote-rule"/,/^		},$/' "$sr_json" \
-		| sed -n 's/.*"initial_path": "\([^"]*\)".*/\1/p')"
-	case "$sr_path" in
-	*cfg-rs_remote-rule.srs) ;;
-	*)
-		echo "FAIL: safe-start-user-remote: expected a concrete initial_path for the"
-		echo "      single-tag rule-set, got '${sr_path}'"
+	# Same reason as 8b: assert the exact string, not a range that can run on
+	# into the next entry.
+	sr_want="\"initial_path\": \"$sr_initial/cfg-rs_remote-rule.srs\""
+	if ! grep -qF "$sr_want" "$sr_json"; then
+		echo "FAIL: safe-start-user-remote: the single-tag rule-set does not carry"
+		echo "      $sr_want"
+		grep -n 'initial_path' "$sr_json" | sed 's/^/      /'
 		FAILED=1
-		;;
-	esac
+	fi
 	if [ -s "$sr_initial/cfg-rs_remote-rule.srs" ]; then
 		echo "PASS: safe-start-user-remote: single-tag -> concrete initial_path, file present"
 	else
@@ -1485,16 +1493,15 @@ else
 	# Multi tag: {tag} in the path, and one file per tag.  The entry is matched
 	# on the multi-tag shape (a tag ARRAY) rather than on the section name, so
 	# the assertion cannot be satisfied by the single-tag entry above.
-	mt_path="$(awk '/"tag": \[/,/^		},$/' "$sr_json" \
-		| sed -n 's/.*"initial_path": "\([^"]*\)".*/\1/p')"
-	case "$mt_path" in
-	*'{tag}'*) ;;
-	*)
-		echo "FAIL: safe-start-user-remote: a multi-tag rule-set needs a {tag} placeholder"
-		echo "      in initial_path, got '${mt_path}' - sing-box would look for one file"
+	mt_want="\"initial_path\": \"$sr_initial/{tag}.srs\""
+	if ! grep -qF "$mt_want" "$sr_json"; then
+		echo "FAIL: safe-start-user-remote: the multi-tag rule-set does not carry"
+		echo "      $mt_want"
+		echo "      sing-box substitutes {tag} and opens every resulting file, so a"
+		echo "      literal path would make it fetch and block - the failure this removes"
+		grep -n 'initial_path' "$sr_json" | sed 's/^/      /'
 		FAILED=1
-		;;
-	esac
+	fi
 	mt_missing=""
 	for tag in cfg-rs_multi-rule cfg-alt-rule; do
 		[ -s "$sr_initial/$tag.srs" ] || mt_missing="$mt_missing $tag"
