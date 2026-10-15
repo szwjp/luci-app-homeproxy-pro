@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/daed-note.png" alt="转战 daed，值得研究 https://github.com/szwjp/daed" width="193" height="17">
+</p>
+
 <div align="center">
 
 # luci-app-homeproxy-pro
