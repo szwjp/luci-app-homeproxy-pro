@@ -328,13 +328,37 @@ hp_probe_dns() {
 # hp_probe_tcp <port>
 # 0 something accepted a connection on loopback:<port>, 1 nothing did,
 # 2 cannot probe here.
+#
+# This probe has to prove an accept WITHOUT leaving the connection hanging
+# around, because it runs inside service_started() while the reload still holds
+# the procd lock - a probe that does not return blocks every later status and
+# reload behind `flock`.
+#
+# A mixed/http/socks inbound accepts and then waits for a real proxy request,
+# so it never closes the connection.  GNU netcat keeps the socket open after
+# stdin EOF unless --close is given, and -w does NOT bound that loop: its wait
+# is spent on the connect (core_readwrite takes its select budget from -i), so
+# the bare probe blocked for as long as the operator left the router alone.
+# Measured with a real GNU netcat 0.7.1 against an inbound that accepts and
+# holds: bare and `-w 3` both hung past 8s, `-c` returned 0 in 1s.
+#
+# A nc that advertises no --close is busybox, and busybox must be invoked bare:
+# it accepts NO options at all on ImmortalWrt 25.12.2 (busybox 1.37.0), where
+# -z/-w/-c all fail with a usage error, so passing -w here would turn a working
+# probe into a warning on every reload - and into a rollback loop for anyone
+# who sets health_probe_strict.  busybox exits on stdin EOF on its own, so the
+# bare form already returns.
 hp_probe_tcp() {
 	local port="$1"
 
 	[ -n "$port" ] || return 2
 	command -v nc > "/dev/null" 2>&1 || return 2
 
-	nc 127.0.0.1 "$port" < "/dev/null" > "/dev/null" 2>&1 && return 0
+	if nc -h 2>&1 | grep -q -- '--close'; then
+		nc -c 127.0.0.1 "$port" < "/dev/null" > "/dev/null" 2>&1 && return 0
+	else
+		nc 127.0.0.1 "$port" < "/dev/null" > "/dev/null" 2>&1 && return 0
+	fi
 
 	return 1
 }

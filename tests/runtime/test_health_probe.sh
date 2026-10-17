@@ -15,6 +15,16 @@
 # gate failure.  "Cannot probe here" stays non-fatal even then - there is
 # nothing to conclude from a missing tool.
 #
+# Reporting correctly is only half of it.  service_started() runs the probes
+# while the reload still holds the procd lock, so a probe that never RETURNS
+# blocks every later status and reload behind `flock` - and no amount of
+# "failures are only warnings" helps a loop that never finishes.  hp_probe_tcp
+# therefore has to survive the two nc flavours it actually meets: one that hangs
+# unless it is told to close on stdin EOF, and one (busybox) that accepts no
+# options at all and would answer a usage error instead of a verdict.  The two
+# stubs below are shaped to fail if the probe is invoked the way that would hang
+# or warn in the field.
+#
 # The probes take explicit ports and shell out to nslookup/nc, so this runs
 # anywhere without ucode, procd or a router.
 #
@@ -106,6 +116,99 @@ expect "tcp: a refusing listener is 1" "$?" "1"
 
 hp_probe_tcp ""
 expect "tcp: no port means cannot-probe (2), not failure" "$?" "2"
+
+echo "== hp_probe_tcp: the probe has to RETURN, not just succeed =="
+# The probe runs inside service_started() while the reload still holds the procd
+# lock, so a probe that never returns blocks every later status and reload
+# behind `flock`.  A test cannot observe a real hang, so each stub below is
+# built to FAIL if it is invoked the way that would hang in the field:
+#
+#   * the GNU stub refuses to answer unless it is passed -c, which is what the
+#     real GNU netcat needs to leave an inbound that accepts and then holds the
+#     connection open.  It also refuses -w, because -w is spent on the connect
+#     and does not bound that loop - so "fixing" it with -w alone fails here.
+#   * the busybox stub rejects every option the way ImmortalWrt's build does,
+#     so passing -w/-z/-c costs the probe its result.
+#
+# Both record how they were called, so the test pins the invocation and not
+# just the verdict.
+BIN_GNU="$WORK/bin-gnu"
+BIN_BBB="$WORK/bin-busybox"
+mkdir -p "$BIN_GNU" "$BIN_BBB"
+NC_ARGS="$WORK/nc_args"
+
+cat > "$BIN_GNU/nc" <<'EOF'
+#!/bin/sh
+# GNU netcat 0.7.1: advertises --close/--wait, and needs -c to stop watching a
+# socket the peer is holding open.  -w is accepted but does not help.
+case "$1" in
+-h|--help)
+	echo "GNU netcat 0.7.1"
+	echo "        --close                 close on EOF from stdin"
+	echo "        --wait SEC              timeout for connects and final net reads"
+	exit 1
+	;;
+esac
+printf '%s\n' "$*" >> "$HP_PROBE_STUB_DIR/nc_args"
+case "$*" in
+-c\ *) ;;
+*) exit 2 ;;  # without -c the real nc would still be running
+esac
+[ -f "$HP_PROBE_STUB_DIR/tcp_ok" ] || exit 1
+exit 0
+EOF
+cat > "$BIN_BBB/nc" <<'EOF'
+#!/bin/sh
+# ImmortalWrt 25.12.2 (busybox 1.37.0): nc advertises no --close and accepts
+# no option at all - -z/-w/-c/-l are all usage errors.  It exits on stdin EOF
+# by itself, so the bare invocation is both correct and sufficient.
+case "$1" in
+-h|--help)
+	echo "Usage: nc [IPADDR PORT]"
+	exit 1
+	;;
+-*)
+	echo "Usage: nc [IPADDR PORT]"
+	exit 1
+	;;
+esac
+printf '%s\n' "$*" >> "$HP_PROBE_STUB_DIR/nc_args"
+[ -f "$HP_PROBE_STUB_DIR/tcp_ok" ] || exit 1
+exit 0
+EOF
+chmod +x "$BIN_GNU/nc" "$BIN_BBB/nc"
+
+SAVED_PATH="$PATH"
+
+: > "$WORK/tcp_ok"
+: > "$NC_ARGS"
+PATH="$BIN_GNU:$SAVED_PATH"
+hp_probe_tcp 5330
+expect "gnu nc: an accepting listener is 0" "$?" "0"
+expect "gnu nc: it is called with -c, so the probe can return" \
+	"$(head -1 "$NC_ARGS" | cut -d' ' -f1)" "-c"
+expect "gnu nc: the target is the mixed inbound, not the capability probe" \
+	"$(head -1 "$NC_ARGS" | awk '{print $(NF-1), $NF}')" "127.0.0.1 5330"
+
+rm -f "$WORK/tcp_ok"
+: > "$NC_ARGS"
+hp_probe_tcp 5330
+expect "gnu nc: a refusing listener is still 1" "$?" "1"
+
+: > "$WORK/tcp_ok"
+: > "$NC_ARGS"
+PATH="$BIN_BBB:$SAVED_PATH"
+hp_probe_tcp 5330
+expect "busybox nc: an accepting listener is 0" "$?" "0"
+expect "busybox nc: it is called bare, because busybox accepts no options" \
+	"$(head -1 "$NC_ARGS")" "127.0.0.1 5330"
+
+rm -f "$WORK/tcp_ok"
+hp_probe_tcp 5330
+expect "busybox nc: a refusing listener is still 1" "$?" "1"
+
+PATH="$SAVED_PATH"
+export PATH
 
 echo "== missing tooling is 'cannot probe', not 'failed' =="
 # PATH is replaced, not prepended to: the host this runs on may well have its

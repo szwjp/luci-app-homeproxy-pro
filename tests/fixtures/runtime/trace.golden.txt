@@ -73,6 +73,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 chmod 600 var/run/homeproxy/known-good/sing-box-c.json
 config_load homeproxy
@@ -268,6 +269,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 jsonfilter -e @['homeproxy'].instances['sing-box-s']
 jsonfilter -e @.running
@@ -528,6 +530,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 chmod 600 var/run/homeproxy/known-good/sing-box-c.json
 config_load homeproxy
@@ -991,6 +994,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 log Client is up again; reinstalling the intercept layer.
 log dnsmasq snippets unchanged, skipping the restart.
@@ -1160,6 +1164,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 chmod 600 var/run/homeproxy/known-good/sing-box-c.json
 config_load homeproxy
@@ -1698,6 +1703,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=70000 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5398
 log Warning: the DNS snippets were not installed; keeping the previous known-good configuration.
 sing-box version -n
@@ -1878,6 +1884,7 @@ jsonfilter -e @.running
 jsonfilter -e @.exit_code
 netstat -ltnup
 nslookup -port=5333 example.com 127.0.0.1
+nc -h
 nc 127.0.0.1 5330
 jsonfilter -e @['homeproxy'].instances['sing-box-s']
 jsonfilter -e @.running
