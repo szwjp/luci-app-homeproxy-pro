@@ -1,4 +1,4 @@
-
+ 
 config homeproxy 'infra'
 	option __warning 'DO NOT EDIT THIS SECTION, OR YOU ARE ON YOUR OWN!'
 	option common_port '22,53,80,143,443,465,587,853,873,993,995,5222,8080,8443,9418'
@@ -32,12 +32,11 @@ config homeproxy 'config'
 	option ipv6_support '1'
 	option github_token ''
 	option log_level 'warn'
-	# Functional health probes (runtime/health.sh). They run after the
-	# process/listener gate and only log by default: a probe can fail because
-	# the uplink is down or a captive portal answers, and rolling a good
-	# configuration back for that would be worse than the condition probed
-	# for. Set health_probe_strict to 1 only if a failing probe must fail the
-	# start (and therefore trigger the rollback).
+	option watchdog_enabled '1'
+	option watchdog_interval '30'
+	option watchdog_fallback 'direct'
+	option watchdog_backup_node ''
+	option watchdog_recovery_delay '5'
 	option health_probe_strict '0'
 	option health_probe_name 'example.com'
 	option cn_ip_fallback '1'
