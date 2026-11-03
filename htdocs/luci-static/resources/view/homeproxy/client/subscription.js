@@ -51,6 +51,13 @@ function render(ctx) {
 	so.value('remote', _('Remote'));
 	so.default = 'remote';
 	so.rmempty = false;
+	/* Remote -> Local: the local Path starts empty, so offer the file the
+	 * remote form already pointed at as its Initial path. See
+	 * hp.autofillLocalRulePath() for why it only fills an empty Path. */
+	so.onchange = function(ev, section_id, value) {
+		if (section_id && value === 'local')
+			hp.autofillLocalRulePath(this.section, section_id);
+	};
 
 	so = ss.option(form.ListValue, 'format', _('Format'),
 		_('Rule-set file format. Leave it empty and HomeProxy reads it from the file itself; a value that does not match the file is corrected and reported in the log.'));

@@ -454,6 +454,10 @@ msgstr ""
 msgid "Connection reuse"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:166
+msgid "Consecutive failed samples before the intercept layer is released. Interval times limit should comfortably outlast a normal sing-box restart (about 5 seconds)."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/homeproxy/node.js:165
 msgid "Conservative"
 msgstr ""
@@ -1322,6 +1326,10 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:333
 msgid "In seconds. Disabled by default."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:160
+msgid "In seconds. How often the client is sampled."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:115
@@ -3191,6 +3199,22 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/homeproxy/status.js:261
 msgid "Warn"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:155
+msgid "Watch the client and fall back to direct routing if it stops responding, instead of leaving the LAN without DNS. It does not judge the node: an unreachable server is not a failure."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:154
+msgid "Watchdog"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:165
+msgid "Watchdog failure limit"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:159
+msgid "Watchdog interval"
 msgstr ""
 
 #: htdocs/luci-static/resources/homeproxy.js:610

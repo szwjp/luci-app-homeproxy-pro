@@ -40,6 +40,19 @@ config homeproxy 'config'
 	# start (and therefore trigger the rollback).
 	option health_probe_strict '0'
 	option health_probe_name 'example.com'
+	# Watchdog (runtime/watchdog.sh, scripts/watchdog.sh). While the service runs
+	# it samples the client; if sing-box dies or hangs for watchdog_fail_limit
+	# samples in a row it takes the intercept layer down so the LAN falls back
+	# to direct routing instead of black-holing, and puts it back once the
+	# client is healthy again. It never judges the VPS - an unreachable node
+	# leaves sing-box alive and direct traffic unaffected. Set watchdog to 0 to
+	# leave it unregistered. The probe names must be DOMESTIC: a foreign name
+	# is resolved through the proxy and would make a dead node look like a
+	# dead sing-box.
+	option watchdog '1'
+	option watchdog_interval '10'
+	option watchdog_fail_limit '4'
+	option watchdog_probe_names 'www.baidu.com www.qq.com'
 	option cn_ip_fallback '1'
 	option sniffer_advanced_mode '0'
 	# Start the client even when a remote rule-set cannot be downloaded.

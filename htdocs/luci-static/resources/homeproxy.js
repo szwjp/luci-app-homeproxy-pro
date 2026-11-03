@@ -1203,6 +1203,50 @@ return baseclass.extend({
 		return true;
 	},
 
+	/* Switching a rule-set from Remote to Local: carry the Initial path over.
+	   The local Path field is empty on a rule-set that was created as remote,
+	   while the remote form's Initial path already names a file under
+	   /etc/homeproxy/ruleset/ - typically the very file the user wants to keep
+	   using once they stop downloading it. Offering it is one click saved; it
+	   is filled in only while Path is still empty, so whatever the user typed
+	   or picked is never overwritten, and flipping the type back and forth
+	   cannot clobber an edit. Returns true when it filled the field.
+
+	   Reads through each option's UI element rather than the saved value: the
+	   user has not saved yet, and the Initial path field is hidden (not
+	   removed) once the type is local, so its widget still holds the text. */
+	autofillLocalRulePath(section, section_id) {
+		if (!section || !section_id)
+			return false;
+
+		const uiOf = (name) => {
+			const opt = section.getOption(name);
+			return opt ? opt.getUIElement(section_id) : null;
+		};
+
+		const path = uiOf('path');
+		const initial = uiOf('initial_path');
+		if (!path || !initial)
+			return false;
+
+		if (String(path.getValue() || '').trim() !== '')
+			return false;
+
+		const value = String(initial.getValue() || '').trim();
+		if (value === '')
+			return false;
+
+		path.setValue(value);
+
+		/* Show the verdict of the validator (the same one the field carries)
+		   immediately instead of on the next keystroke. Not every widget
+		   offers it, and the fill has already happened either way. */
+		if (typeof(path.triggerValidation) === 'function')
+			path.triggerValidation();
+
+		return true;
+	},
+
 	validatePortRange(section_id, value) {
 		if (section_id && value) {
 			value = value.match(/^(\d+)?\:(\d+)?$/);

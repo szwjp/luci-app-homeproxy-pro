@@ -41,6 +41,7 @@
 | 健康门 | `ubus` + `pgrep` 简单轮询 | `hp_wait_service` 连续 N 次采样（默认 3/30s）+ `netstat -p` 端口归属校验；不健康自动 rollback | `runtime/health.sh:hp_wait_service` |
 | UCI 1.14 迁移 | r10/r11 自述较弱 | `migrate_config.uc` 36 checks 覆盖 1.14 DNS renames / `dns_server.address` 拆分 / `rcode://` → predefined rule / `rule_set_ipcidr_match_source` rename / `block-out`/`block-dns` → `action='reject'` / `auto_firewall` 重分发 / `block-dns` default-server | `scripts/migrate_config.uc` + `tests/ucode/test_migrate_config.sh` |
 | sing-box 版本门 | 无 | `hp_require_singbox()` 在 start 时显式拒绝 `<1.14`，启动失败记录明确日志 | `runtime/service.sh:hp_require_singbox` |
+| 运行期看门狗 | 无。sing-box 运行中崩溃 / 卡死时拦截层仍在：全家 TCP 被拒、DNS 无上游；procd 重试耗尽（默认 5 次）后成为永久黑洞 | `watchdog` 作为 procd 实例随服务注册，**fail-open**：连续 N 次采样不健康（默认 4×10s，跳过 procd 正常 5s 重启）→ 经 `release_intercept` 撤销 nft 重定向与 dnsmasq 上游指向，局域网退回直连；稳定健康后经 `rearm_intercept` 复位（含启动失败时被放行的拦截层）；复位后立刻再失败则加倍冷却（60→600s）。只探测国内域名，**不判断节点好坏**（节点不可达时 sing-box 仍在、直连不受影响）；`option watchdog '0'` 关闭；日志带 `[WATCHDOG]` | `runtime/watchdog.sh` + `scripts/watchdog.sh` + `init.d/homeproxy:{release,rearm}_intercept` + `tests/runtime/test_watchdog.sh` |
 
 ### 安全
 
@@ -69,6 +70,7 @@
 | 维度 | upstream 形态 | pro 形态 | 证据 |
 |---|---|---|---|
 | Status 语义 | 2 态（RUNNING / NOT RUNNING） | 3 态（+ **STATUS UNKNOWN** 黄），区分 "rpc 没回" vs "service 死了" | `homeproxy.js:statusLabel` + `client.js:renderStatus` |
+| 规则集 Remote → Local | 切到 Local 后本地「路径」为空，要手抄 Remote 时填过的「初始路径」 | 切换类型时自动把「初始路径」带入空的「路径」；已有内容绝不覆盖，来回切换也不会冲掉手改的值 | `homeproxy.js:autofillLocalRulePath` + `client/subscription.js`（`type.onchange`）+ `tests/frontend-ruleset-autofill.js` |
 | 前端特异性 bug 修复 | `stubValidator` 缺 `factory` 致 ip6addr TypeError；`L.bind(hp.renderSectionAdd, …)` 把 factory 塞 `extra_class` 槽致 `InvalidCharacterError` | 已修：`stubValidator` 持 `factory: validation`；`renderSectionAdd` 改薄 wrap（arch-guard 22 / 23 锁 binding 形态） | `view/homeproxy/client.js:73` + `homeproxy.js:1018-1026` |
 | 协议增改成本 | 改 110 行 ternary（README 旧行） | 改 5 个表行：`model.uc CREDENTIALS` + `loader.uc PROTOCOL_OPTIONS` + `adapter.uc OPTION_FIELDS` + `fixtures/` + golden snapshot；arch-guard 5 强制 fixtures 同步 | `config/{model,loader,adapter}.uc` + `tests/fixtures/generators/` |
 | 资源更新 | jsdelivr 单一镜像 | 4 镜像 fallback（`fastly.jsdelivr.net` / `gcore.jsdelivr.net` / `cdn.jsdelivr.net` / `raw.githubusercontent.com`）+ UI「上次成功时间」（arch-guard 17 / 18 锁） | `runtime/dns.sh` + arch-guard 17 / 18 |

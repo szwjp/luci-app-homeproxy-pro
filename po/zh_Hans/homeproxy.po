@@ -467,6 +467,10 @@ msgstr "连接检查"
 msgid "Connection reuse"
 msgstr "连接复用"
 
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:166
+msgid "Consecutive failed samples before the intercept layer is released. Interval times limit should comfortably outlast a normal sing-box restart (about 5 seconds)."
+msgstr "连续多少次采样失败后撤销拦截层。采样间隔乘以该次数应明显长于 sing-box 的一次正常重启（约 5 秒）。"
+
 #: htdocs/luci-static/resources/view/homeproxy/node.js:165
 msgid "Conservative"
 msgstr "保守"
@@ -1357,6 +1361,10 @@ msgstr "单位：秒。"
 #: htdocs/luci-static/resources/view/homeproxy/node.js:333
 msgid "In seconds. Disabled by default."
 msgstr "单位：秒。默认禁用。"
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:160
+msgid "In seconds. How often the client is sampled."
+msgstr "单位：秒。多久检测一次客户端。"
 
 #: htdocs/luci-static/resources/view/homeproxy/node.js:115
 msgid ""
@@ -3297,6 +3305,22 @@ msgstr "WAN IP 策略"
 #: htdocs/luci-static/resources/view/homeproxy/status.js:261
 msgid "Warn"
 msgstr "警告"
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:155
+msgid "Watch the client and fall back to direct routing if it stops responding, instead of leaving the LAN without DNS. It does not judge the node: an unreachable server is not a failure."
+msgstr "监视客户端，一旦它无响应就退回直连，而不是让局域网失去 DNS。它不判断节点好坏：服务器不可达不算故障。"
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:154
+msgid "Watchdog"
+msgstr "看门狗"
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:165
+msgid "Watchdog failure limit"
+msgstr "看门狗失败阈值"
+
+#: htdocs/luci-static/resources/view/homeproxy/client/routing.js:159
+msgid "Watchdog interval"
+msgstr "看门狗检测间隔"
 
 #: htdocs/luci-static/resources/homeproxy.js:610
 msgid "WebSocket"
