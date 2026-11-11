@@ -15,6 +15,7 @@
 					"connection_check",
 					"node_parse",
 					"resources_get_version",
+					"ruleset_list_local_files",
 					"singbox_get_features",
 					"update_subscriptions_status"
 				]

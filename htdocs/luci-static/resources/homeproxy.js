@@ -887,6 +887,10 @@ return baseclass.extend({
 		});
 	},
 
+	getLocalRuleSetFiles() {
+		return this.rpcCall('ruleset_list_local_files', [], { fallback: { files: [] } });
+	},
+
 	getBuiltinFeatures() {
 		return this.rpcCall('singbox_get_features', [], { expect: { '': {} } });
 	},
