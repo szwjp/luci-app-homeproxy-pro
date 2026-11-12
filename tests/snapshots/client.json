@@ -3232,9 +3232,9 @@
 								"subsection": null,
 								"props": {
 									"datatype": "file",
+									"load": "fn(363:f787349e986b)",
 									"modalonly": true,
 									"placeholder": "/etc/homeproxy/ruleset/example.srs",
-									"renderWidget": "fn(1737:30620905f7ca)",
 									"rmempty": false,
 									"validate": "fn(279:52e3f36f3a3c)"
 								}
