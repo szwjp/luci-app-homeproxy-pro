@@ -92,60 +92,27 @@ function render(ctx) {
 	so.value(hp.rule_path_default);
 	so.placeholder = hp.rule_path_default;
 	so.validate = hp.validateRuleSetPath;
+	/* Manual entry stays intact. The unreferenced .srs/.json files found in
+	 * the managed directory are offered as full-path choices of this same
+	 * field; the RPC filters the list against both local path and remote
+	 * initial_path. */
+	so.load = function(section_id) {
+		const base = this.super('load', section_id);
+
+		return hp.getLocalRuleSetFiles().then(L.bind(function(result) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value(hp.rule_path_default);
+			const files = result && Array.isArray(result.files) ? result.files : [];
+			files.forEach(file => this.value(file.path, file.path));
+
+			return base;
+		}, this));
+	};
 	so.rmempty = false;
 	so.depends('type', 'local');
 	so.modalonly = true;
-	/* Keep manual entry intact, but add a picker in the same row. The picker
-	 * only offers unreferenced files from the managed ruleset directory; the
-	 * RPC filters the list against both local path and remote initial_path. */
-	so.renderWidget = function(section_id) {
-		const input = form.Value.prototype.renderWidget.apply(this, arguments);
-		const wrapper = E('div', { 'class': 'homeproxy-ruleset-path-picker', 'style': 'display:flex;align-items:center;gap:0.5em' }, [
-			E('div', { 'style': 'flex:1;min-width:0' }, [ input ]),
-			E('button', {
-				'class': 'btn cbi-button cbi-button-action',
-				'type': 'button',
-				'click': L.bind(function() {
-					const pathWidget = this;
-					const format = this.section.formvalue(section_id, 'format') || '';
-					hp.getLocalRuleSetFiles().then(function(result) {
-						let files = result && Array.isArray(result.files) ? result.files : [];
-						if (format === 'binary')
-							files = files.filter(file => file.format === 'binary');
-						else if (format === 'source')
-							files = files.filter(file => file.format === 'source');
-
-						const select = E('select', { 'class': 'cbi-input-select', 'style': 'width:100%' },
-							files.map(file => E('option', { 'value': file.path }, [ file.name ])));
-						if (!files.length)
-							select.appendChild(E('option', { 'value': '' }, [ _('No unreferenced rule-set files found') ]));
-
-						ui.showModal(_('Select a local rule-set file'), [
-							E('p', {}, [ _('Only unreferenced .srs or .json files in %s are listed.').format('/etc/homeproxy/ruleset/') ]),
-							select,
-							E('div', { 'class': 'right' }, [
-								E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Cancel') ]),
-								' ',
-								E('button', { 'class': 'btn cbi-button-positive', 'click': function() {
-									if (select.value) {
-										const option = pathWidget.section.getOption('path');
-										const widget = option && option.getUIElement(section_id);
-										if (widget) {
-											widget.setValue(select.value);
-											if (widget.triggerValidation)
-												widget.triggerValidation();
-										}
-									}
-									ui.hideModal();
-								} }, [ _('Use selected file') ])
-							])
-						]);
-					});
-				}, this),
-			}, [ _('Browse') ])
-		]);
-		return wrapper;
-	};
 
 	so = ss.option(form.Value, 'url', _('Rule set URL'));
 	so.validate = function(section_id, value) {
