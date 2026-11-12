@@ -338,10 +338,6 @@ msgstr "封锁"
 msgid "Both"
 msgstr "全部"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:145
-msgid "Browse"
-msgstr "浏览"
-
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:213
 msgid "Bypass CN traffic"
 msgstr "绕过中国流量"
@@ -370,7 +366,6 @@ msgstr "CNNIC 公共 DNS（210.2.4.8）"
 msgid "CUBIC"
 msgstr "CUBIC"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:127
 #: htdocs/luci-static/resources/view/homeproxy/node.js:631
 msgid "Cancel"
 msgstr "取消"
@@ -547,7 +542,7 @@ msgstr "调试"
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:73
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:416
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:64
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:181
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:148
 msgid "Default"
 msgstr "默认"
 
@@ -605,7 +600,7 @@ msgstr "诊断报告"
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:97
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:325
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:233
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:182
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:149
 msgid "Direct"
 msgstr "直连"
 
@@ -953,13 +948,13 @@ msgstr "Evaluate 标签"
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:155
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:158
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:112
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:154
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:157
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:162
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:165
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:208
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:211
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:247
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:121
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:124
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:129
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:132
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:175
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:178
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:214
 #: htdocs/luci-static/resources/view/homeproxy/node.js:489
 #: htdocs/luci-static/resources/view/homeproxy/node.js:762
 #: htdocs/luci-static/resources/view/homeproxy/node.js:765
@@ -984,13 +979,13 @@ msgstr "外部账户密钥标识符"
 msgid "Extra records"
 msgstr "附加记录"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:202
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:169
 msgid ""
 "Extra rule-set tags sharing these options. Requires {tag} in path/url (1.14)."
 msgstr ""
 "共享这些选项的额外规则集标签。使用多标签时 path/url 需包含 {tag}（1.14）。"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:201
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:168
 msgid "Extra tags"
 msgstr "额外标签"
 
@@ -1386,7 +1381,7 @@ msgstr "在检查中，关闭空闲时间超过此值的会话（单位：秒）
 msgid "Info"
 msgstr "信息"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:192
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:159
 msgid "Initial path"
 msgstr "初始路径"
 
@@ -1518,7 +1513,7 @@ msgstr "本地"
 msgid "Local address"
 msgstr "本地地址"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:193
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:160
 msgid ""
 "Local file with initial rule-set content; avoids blocking startup on first "
 "download (1.14). Must be under %s."
@@ -1852,10 +1847,6 @@ msgstr "无可用订阅"
 msgid "No subscription node"
 msgstr "无订阅节点"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:121
-msgid "No unreferenced rule-set files found"
-msgstr "未找到未被引用的规则集文件"
-
 #: htdocs/luci-static/resources/view/homeproxy/node.js:672
 msgid "No valid share link found."
 msgstr "找不到有效分享链接。"
@@ -1912,10 +1903,6 @@ msgstr "只处理来自指定接口的流量。留空表示全部。"
 msgid "Only proxy mainland China"
 msgstr "仅代理中国大陆"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:124
-msgid "Only unreferenced .srs or .json files in %s are listed."
-msgstr "仅列出 %s 中未被引用的 .srs 或 .json 文件。"
-
 #: htdocs/luci-static/resources/view/homeproxy/client/dns.js:30
 msgid "Optimistic DNS cache"
 msgstr "乐观 DNS 缓存"
@@ -1939,7 +1926,7 @@ msgstr "其他字段"
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:329
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:91
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:319
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:175
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:142
 msgid "Outbound"
 msgstr "出站"
 
@@ -1947,7 +1934,7 @@ msgstr "出站"
 msgid "Outbound node"
 msgstr "出站节点"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:176
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:143
 msgid ""
 "Outbound used to download this rule-set (via sing-box 1.14 http_clients)."
 msgstr "下载此规则集所使用的出站（经 sing-box 1.14 http_clients 生效）。"
@@ -2422,7 +2409,7 @@ msgstr "规则集"
 msgid "Rule set IP CIDR as source IP"
 msgstr "规则集 IP CIDR 作为源 IP"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:150
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:117
 msgid "Rule set URL"
 msgstr "规则集 URL"
 
@@ -2484,10 +2471,6 @@ msgstr "保存当前设置"
 #: htdocs/luci-static/resources/view/homeproxy/node.js:800
 msgid "Save subscriptions settings"
 msgstr "保存订阅设置"
-
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:123
-msgid "Select a local rule-set file"
-msgstr "选择本地规则集文件"
 
 #: htdocs/luci-static/resources/view/homeproxy/client/common.js:245
 msgid "Send the query before pending race rules are judged (1.14)."
@@ -3192,11 +3175,11 @@ msgstr "更新 %s 个订阅"
 msgid "Update failed."
 msgstr "更新失败。"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:217
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:184
 msgid "Update interval"
 msgstr "更新间隔"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:218
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:185
 msgid "Update interval of rule set, e.g. 24h or 3600 (seconds)."
 msgstr "规则集更新间隔，例如 24h 或 3600（秒）。"
 
@@ -3252,10 +3235,6 @@ msgstr "上传..."
 #: htdocs/luci-static/resources/view/homeproxy/server.js:331
 msgid "Use ACME TLS certificate issuer."
 msgstr "使用 ACME TLS 证书颁发机构。"
-
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:140
-msgid "Use selected file"
-msgstr "使用所选文件"
 
 #: htdocs/luci-static/resources/view/homeproxy/client/routing.js:144
 msgid ""
@@ -3426,7 +3405,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/homeproxy/client/dns.js:154
 #: htdocs/luci-static/resources/view/homeproxy/client/dns.js:196
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:141
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:154
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:121
 #: htdocs/luci-static/resources/view/homeproxy/node.js:489
 msgid "non-empty value"
 msgstr "非空值"
@@ -3516,7 +3495,7 @@ msgstr "独立值"
 msgid "unknown error"
 msgstr "未知错误"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:247
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:214
 msgid "update interval like 24h, 1h30m or 3600"
 msgstr "形如 24h、1h30m 或 3600 的更新间隔"
 
@@ -3558,8 +3537,8 @@ msgstr "有效 DNS 服务器地址"
 
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:155
 #: htdocs/luci-static/resources/view/homeproxy/client/nodes.js:158
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:162
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:165
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:129
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:132
 #: htdocs/luci-static/resources/view/homeproxy/node.js:762
 #: htdocs/luci-static/resources/view/homeproxy/node.js:765
 msgid "valid URL"
@@ -3606,12 +3585,12 @@ msgstr "wrong-sequence（默认）"
 msgid "wrong-timestamp"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:157
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:208
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:124
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:175
 msgid "{tag} in URL when extra tags are used"
 msgstr "使用额外标签时 URL 需包含 {tag}"
 
-#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:211
+#: htdocs/luci-static/resources/view/homeproxy/client/subscription.js:178
 msgid "{tag} in initial path when extra tags are used"
 msgstr "使用额外标签时初始路径需包含 {tag}"
 
