@@ -319,7 +319,7 @@ const methods = {
 			const u = cursor();
 
 		u.foreach('homeproxy', 'ruleset', function(section) {
-				for (let key in [ 'path', 'initial_path' ]) {
+				for (let key in { path: true, initial_path: true }) {
 					const value = section[key];
 					if (type(value) == 'string' && length(value))
 						referenced[value] = true;
