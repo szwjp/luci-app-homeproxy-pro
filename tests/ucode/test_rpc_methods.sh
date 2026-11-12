@@ -225,7 +225,7 @@ check('certificate_write tolerates an empty request', threw == null, threw);
 const all_methods = [
 	'acllist_read', 'acllist_write', 'certificate_write', 'connection_check',
 	'debug_report', 'log_clean', 'node_parse', 'resources_get_version',
-	'resources_update', 'singbox_generator', 'singbox_get_features',
+	'resources_update', 'ruleset_list_local_files', 'singbox_generator', 'singbox_get_features',
 	'update_subscriptions', 'update_subscriptions_status'
 ];
 
