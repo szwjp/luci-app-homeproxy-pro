@@ -9,6 +9,7 @@
 'require baseclass';
 'require form';
 'require uci';
+'require ui';
 
 'require homeproxy as hp';
 
@@ -51,6 +52,13 @@ function render(ctx) {
 	so.value('remote', _('Remote'));
 	so.default = 'remote';
 	so.rmempty = false;
+	/* Remote -> Local: the local Path starts empty, so offer the file the
+	 * remote form already pointed at as its Initial path. See
+	 * hp.autofillLocalRulePath() for why it only fills an empty Path. */
+	so.onchange = function(ev, section_id, value) {
+		if (section_id && value === 'local')
+			hp.autofillLocalRulePath(this.section, section_id);
+	};
 
 	so = ss.option(form.ListValue, 'format', _('Format'),
 		_('Rule-set file format. Leave it empty and HomeProxy reads it from the file itself; a value that does not match the file is corrected and reported in the log.'));
@@ -84,6 +92,24 @@ function render(ctx) {
 	so.value(hp.rule_path_default);
 	so.placeholder = hp.rule_path_default;
 	so.validate = hp.validateRuleSetPath;
+	/* Manual entry stays intact. The unreferenced .srs/.json files found in
+	 * the managed directory are offered as full-path choices of this same
+	 * field; the RPC filters the list against both local path and remote
+	 * initial_path. */
+	so.load = function(section_id) {
+		const base = this.super('load', section_id);
+
+		return hp.getLocalRuleSetFiles().then(L.bind(function(result) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value(hp.rule_path_default);
+			const files = result && Array.isArray(result.files) ? result.files : [];
+			files.forEach(file => this.value(file.path, file.path));
+
+			return base;
+		}, this));
+	};
 	so.rmempty = false;
 	so.depends('type', 'local');
 	so.modalonly = true;

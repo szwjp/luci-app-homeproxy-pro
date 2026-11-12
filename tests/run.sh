@@ -130,6 +130,13 @@ echo "== frontend view wiring =="
 # read the wrong UCI section (and therefore never actually guarded anything).
 node "$ROOT/tests/frontend-view-wiring.js" "$ROOT" || FAILED=1
 
+echo "== frontend rule-set path auto-fill =="
+# Remote -> Local fills the empty local Path with the Initial path, and never
+# overwrites a Path that already has a value. Pins both the helper and that the
+# real Type option has the handler attached - a correct helper behind a handler
+# that is never wired does nothing for the user.
+node "$ROOT/tests/frontend-ruleset-autofill.js" "$ROOT" || FAILED=1
+
 echo "== frontend MD5 (the grouphash contract) =="
 # calcStringMD5() has to be RFC 1321 MD5 and nothing else: its output is
 # compared against the md5() ucode writes into a node's `grouphash`, so a
@@ -158,6 +165,15 @@ echo "== functional health probes (C2) =="
 # report by default and can only fail the gate when health_probe_strict is on,
 # and "cannot probe here" never fails it.
 sh "$ROOT/tests/runtime/test_health_probe.sh" "$ROOT" || FAILED=1
+
+echo "== runtime watchdog =="
+# Also pure shell: the decision is driven on a synthetic clock and the loop with
+# the sample and the init script's two commands stubbed, so the whole
+# release -> hold-off -> re-arm cycle runs without procd, nft or a router. What
+# it pins is that a blip does not act, a real failure acts once, the layer comes
+# back (including one a failed start released), a flap lengthens the hold-off,
+# and the init script exposes exactly the commands the daemon calls.
+sh "$ROOT/tests/runtime/test_watchdog.sh" "$ROOT" || FAILED=1
 
 echo "== crontab permissions =="
 # Also pure shell: hp_crontab_drop() is driven against a sandboxed crontab, so

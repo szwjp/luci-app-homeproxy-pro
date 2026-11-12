@@ -311,6 +311,41 @@ const methods = {
 		}
 	},
 
+	ruleset_list_local_files: {
+		call: function() {
+			const dir = `${HP_DIR}/ruleset`;
+			let referenced = {};
+			let files = [];
+			const u = cursor();
+
+		u.foreach('homeproxy', 'ruleset', function(section) {
+				for (let key in { path: true, initial_path: true }) {
+					const value = section[key];
+					if (type(value) == 'string' && length(value))
+						referenced[value] = true;
+				}
+			});
+
+			/* Fixed command and fixed directory: no user-supplied shell input. */
+			const fd = popen("ls -1A /etc/homeproxy/ruleset 2>/dev/null");
+			if (!fd)
+				return { files: [] };
+
+			for (let name = fd.read('line'); length(name); name = fd.read('line')) {
+				name = trim(name);
+				if (!match(name, /^[A-Za-z0-9._-]+\.(srs|json)$/i))
+					continue;
+
+				const path = `${dir}/${name}`;
+				if (!referenced[path] && access(path))
+					push(files, { name, path, format: match(name, /\.json$/i) ? 'source' : 'binary' });
+			}
+
+			fd.close();
+			return { files };
+		}
+	},
+
 	singbox_get_features: {
 		call: function() {
 			return collectFeatures();

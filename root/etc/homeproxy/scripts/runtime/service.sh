@@ -538,6 +538,23 @@ hp_procd_client_instance() {
 	procd_close_instance
 }
 
+# hp_procd_watchdog_instance <hp-dir>
+# Register the watchdog (scripts/watchdog.sh) as a procd instance of this
+# service.  Started through /bin/sh so the script does not need its execute bit,
+# and respawned without a retry limit: a keeper that gives up after a few
+# crashes is exactly what it exists to replace.  The command line deliberately
+# shares nothing with the `sing-box run --config` text runtime/health.sh matches
+# on, so the health gate can never mistake it for the client.
+hp_procd_watchdog_instance() {
+	local hp_dir="$1"
+
+	procd_open_instance "watchdog"
+	procd_set_param command /bin/sh "$hp_dir/scripts/watchdog.sh"
+	procd_set_param respawn 3600 5 0
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
 # hp_procd_server_instance <prog> <hp-dir> <run-dir> <disable-gso>
 # Register the sing-box server instance.  The jail only depends on ujail
 # being installed, and it needs the certificate/ACME material instead of the

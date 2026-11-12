@@ -73,6 +73,14 @@ LOG_PATH="$RUN_DIR/homeproxy.log"
 # configuration fails to come up.
 GOOD_DIR="$RUN_DIR/known-good"
 
+# Commands the watchdog (scripts/watchdog.sh) drives.  They are the only two
+# ways it touches the network layer, so the release/rearm logic exists once,
+# here, instead of being re-implemented in a second process that would have to
+# reproduce this file's whole set of helpers.
+EXTRA_COMMANDS="release_intercept rearm_intercept"
+EXTRA_HELP="	release_intercept	Take the intercept layer down; the LAN falls back to direct routing
+	rearm_intercept	Reinstall the intercept layer that a release took down"
+
 
 # fw4 chain/set inventory; single source of truth shared with firewall_post.ut
 [ -f "$HP_DIR/scripts/fw4_names.sh" ] && . "$HP_DIR/scripts/fw4_names.sh"
@@ -195,6 +203,27 @@ hp_release_stale_intercept() {
 	hp_release_intercept
 }
 
+# release_intercept / rearm_intercept
+# The watchdog's two levers (see EXTRA_COMMANDS).  Both need the UCI config
+# loaded: hp_net_teardown and hp_net_setup read the mark/table numbers from it,
+# and the re-arm has to know which proxy and routing mode to rebuild.  rc.common
+# runs an extra command without the procd lock, so a release racing a reload is
+# possible in principle; it is harmless - a reload removes the watchdog with
+# every other instance, and start_service installs the layer from scratch.
+release_intercept() {
+	config_load "$CONF"
+	hp_release_intercept
+}
+
+rearm_intercept() {
+	local proxy_mode routing_mode
+
+	config_load "$CONF"
+	config_get proxy_mode "config" "proxy_mode" "redirect_tproxy"
+	config_get routing_mode "config" "routing_mode" "bypass_mainland_china"
+	hp_rearm_intercept "$proxy_mode" "$routing_mode"
+}
+
 start_service() {
 	config_load "$CONF"
 
@@ -315,6 +344,14 @@ start_service() {
 			|| rm -f "$HP_DIR/resources/.dnsmasq-nftset"
 
 		hp_procd_client_instance "$PROG" "$HP_DIR" "$RUN_DIR" "$routing_mode" "$disable_gso"
+
+		# The watchdog keeps the client honest: if sing-box dies or hangs it
+		# releases the intercept layer instead of letting the LAN black-hole,
+		# and puts it back once the client is healthy again.  On by default;
+		# `option watchdog '0'` leaves it unregistered.
+		local watchdog
+		config_get_bool watchdog "config" "watchdog" "1"
+		[ "$watchdog" = "1" ] && hp_procd_watchdog_instance "$HP_DIR"
 	fi
 
 	if [ "$server_enabled" = "1" ]; then

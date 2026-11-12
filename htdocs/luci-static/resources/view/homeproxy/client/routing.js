@@ -145,6 +145,29 @@ function render(ctx) {
 	o.default = '0';
 	o.rmempty = false;
 
+	/* Watchdog (runtime/watchdog.sh). On by default: it only ever acts when
+	 * the client has stopped answering, and what it does then is take the
+	 * intercept layer down so the LAN falls back to direct routing instead of
+	 * losing DNS. The tunables are plain UCI (watchdog_interval,
+	 * watchdog_fail_limit); the daemon clamps them, so a hand-edited value
+	 * cannot turn the loop into a busy spin. */
+	o = s.taboption('routing', form.Flag, 'watchdog', _('Watchdog'),
+		_('Watch the client and fall back to direct routing if it stops responding, instead of leaving the LAN without DNS. It does not judge the node: an unreachable server is not a failure.'));
+	o.default = o.enabled;
+	o.rmempty = false;
+
+	o = s.taboption('routing', form.Value, 'watchdog_interval', _('Watchdog interval'),
+		_('In seconds. How often the client is sampled.'));
+	o.datatype = 'range(5,300)';
+	o.placeholder = '10';
+	o.depends('watchdog', '1');
+
+	o = s.taboption('routing', form.Value, 'watchdog_fail_limit', _('Watchdog failure limit'),
+		_('Consecutive failed samples before the intercept layer is released. Interval times limit should comfortably outlast a normal sing-box restart (about 5 seconds).'));
+	o.datatype = 'range(2,30)';
+	o.placeholder = '4';
+	o.depends('watchdog', '1');
+
 	/* Custom routing settings start */
 	/* Routing settings start */
 	o = s.taboption('routing', form.SectionValue, '_routing', form.NamedSection, 'routing', 'homeproxy');
